@@ -1,0 +1,283 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		3F9FE3DF03054ED2B74533B5 = {isa = PBXBuildFile; fileRef = FD2A44A79CE84F72898170AE /* TabbyApp.swift */; };
+		6E36E89F87764636882F131A = {isa = PBXBuildFile; fileRef = 75A7E91F0CF44FC6AEDDC131 /* ContentView.swift */; };
+		9998B75EAE624DD3ADD8F635 = {isa = PBXBuildFile; fileRef = 80ADA12780554F58932740AC /* OnboardingView.swift */; };
+		B8DB5869A14843318AC273DE = {isa = PBXBuildFile; fileRef = CC77BC8A8F1C4C20B5931B4C /* TabbyTheme.swift */; };
+		E8B850C0243847A286701943 = {isa = PBXBuildFile; fileRef = FA41CCCD510147899AB2604A /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		B278F5CE4C254359B1C93ABA = {isa = PBXFileReference; explicitFileType = wrapper.application; path = Tabby.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		FD2A44A79CE84F72898170AE = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabbyApp.swift; sourceTree = "<group>"; };
+		75A7E91F0CF44FC6AEDDC131 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		80ADA12780554F58932740AC = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		CC77BC8A8F1C4C20B5931B4C = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabbyTheme.swift; sourceTree = "<group>"; };
+		C07C89602A9B4853AD93A963 = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		FA41CCCD510147899AB2604A = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		FB1849E4B1A947699D7D6E1C = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		607F63B7F2074C989E6334C8 = {
+			isa = PBXGroup;
+			children = (
+				0966D3AD5D4E4A649F5AD9C4 /* Tabby */,
+				A7FB826206C74AA8A4A34622 /* Products */,
+			);
+			path = "";
+			sourceTree = "<group>";
+		};
+		0966D3AD5D4E4A649F5AD9C4 = {
+			isa = PBXGroup;
+			children = (
+				FD2A44A79CE84F72898170AE /* TabbyApp.swift */,
+				75A7E91F0CF44FC6AEDDC131 /* ContentView.swift */,
+				9EF1594E781B4C7E8F274C0B /* Design */,
+				4A9B6D9A0C254FE28F60FFB8 /* Onboarding */,
+				CDC16A3FE49E4F4BB837CF62 /* Resources */,
+			);
+			path = Tabby;
+			sourceTree = "<group>";
+		};
+		9EF1594E781B4C7E8F274C0B = {
+			isa = PBXGroup;
+			children = (
+				CC77BC8A8F1C4C20B5931B4C /* TabbyTheme.swift */,
+			);
+			path = Design;
+			sourceTree = "<group>";
+		};
+		4A9B6D9A0C254FE28F60FFB8 = {
+			isa = PBXGroup;
+			children = (
+				80ADA12780554F58932740AC /* OnboardingView.swift */,
+			);
+			path = Onboarding;
+			sourceTree = "<group>";
+		};
+		CDC16A3FE49E4F4BB837CF62 = {
+			isa = PBXGroup;
+			children = (
+				FA41CCCD510147899AB2604A /* Assets.xcassets */,
+				C07C89602A9B4853AD93A963 /* Info.plist */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		A7FB826206C74AA8A4A34622 = {
+			isa = PBXGroup;
+			children = (
+				B278F5CE4C254359B1C93ABA /* Tabby.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		4349D90E307A49BC982A7A40 = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 6B9C1038791648F6A2A0D6E1 /* Build configuration list for PBXNativeTarget "Tabby" */;
+			buildPhases = (
+				3030539ED21349A1888E45A3 /* Sources */,
+				FB1849E4B1A947699D7D6E1C /* Frameworks */,
+				BC7373E219EF4784B60C2594 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Tabby;
+			productName = Tabby;
+			productReference = B278F5CE4C254359B1C93ABA /* Tabby.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		16B40644C5BA4238BFAB75B5 = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					4349D90E307A49BC982A7A40 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+				};
+			};
+			buildConfigurationList = 3B92F782C2F3474783101CF4 /* Build configuration list for PBXProject "Tabby" */;
+			compatibilityVersion = "Xcode 15.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 607F63B7F2074C989E6334C8;
+			productRefGroup = A7FB826206C74AA8A4A34622;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				4349D90E307A49BC982A7A40 /* Tabby */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		BC7373E219EF4784B60C2594 = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E8B850C0243847A286701943 /* Assets.xcassets */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		3030539ED21349A1888E45A3 = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3F9FE3DF03054ED2B74533B5 /* TabbyApp.swift */,
+				6E36E89F87764636882F131A /* ContentView.swift */,
+				B8DB5869A14843318AC273DE /* TabbyTheme.swift */,
+				9998B75EAE624DD3ADD8F635 /* OnboardingView.swift */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		7BEBD470B44C47E19FAE4220 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_PREVIEWS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = -Onone;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Tabby/Resources/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 0.1;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tabby.app;
+				PRODUCT_NAME = Tabby;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1";
+			SUPPORTS_MACCATALYST = NO;
+			SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+			SDKROOT = iphoneos;
+			};
+			name = Debug;
+		};
+		F14F19F99F014C8BAC628122 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_PREVIEWS = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Tabby/Resources/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tabby.app;
+				PRODUCT_NAME = Tabby;
+				SWIFT_VERSION = 5.0;
+				SWIFT_OPTIMIZATION_LEVEL = -O;
+				TARGETED_DEVICE_FAMILY = "1";
+			SUPPORTS_MACCATALYST = NO;
+			SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+			SDKROOT = iphoneos;
+			};
+			name = Release;
+		};
+		7CB572391D1C45E794FD73C6 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				SWIFT_OPTIMIZATION_LEVEL = -Onone;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				INFOPLIST_FILE = Tabby/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = com.tabby.app;
+				PRODUCT_NAME = Tabby;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1";
+			SUPPORTS_MACCATALYST = NO;
+			SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+			SDKROOT = iphoneos;
+			};
+			name = Debug;
+		};
+		615FC3E3B05A4313A338C963 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				INFOPLIST_FILE = Tabby/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = com.tabby.app;
+				PRODUCT_NAME = Tabby;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1";
+			SUPPORTS_MACCATALYST = NO;
+			SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+			SDKROOT = iphoneos;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		3B92F782C2F3474783101CF4 = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7BEBD470B44C47E19FAE4220 /* Debug */,
+				F14F19F99F014C8BAC628122 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		6B9C1038791648F6A2A0D6E1 = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7CB572391D1C45E794FD73C6 /* Debug */,
+				615FC3E3B05A4313A338C963 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 16B40644C5BA4238BFAB75B5 /* Project object */;
+}

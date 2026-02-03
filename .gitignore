@@ -1,0 +1,21 @@
+.DS_Store
+.venv/
+output/
+
+# Xcode
+DerivedData/
+*.xcuserstate
+*.xcuserdata/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# SwiftPM
+.build/
+Packages/
+Package.resolved
+
+# App icon / asset catalogs (keep contents)
+**/*.xcassets/*.appiconset/*.png
