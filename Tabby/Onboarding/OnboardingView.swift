@@ -2,7 +2,7 @@ import SwiftUI
 
 struct TabbyOnboardingView: View {
     @State private var selection = 0
-    @State private var permissionState = PermissionState()
+    @StateObject private var permissionCenter = PermissionCenter()
 
     private let steps = OnboardingStep.allCases
 
@@ -28,7 +28,7 @@ struct TabbyOnboardingView: View {
 
                 TabView(selection: $selection) {
                     ForEach(steps) { step in
-                        OnboardingPageView(step: step, permissionState: $permissionState)
+                        OnboardingPageView(step: step, permissionCenter: permissionCenter)
                             .tag(step.index)
                             .padding(.horizontal, 24)
                             .padding(.top, topInset)
@@ -46,7 +46,7 @@ struct TabbyOnboardingView: View {
                         step: currentStep,
                         selection: $selection,
                         total: steps.count,
-                        permissionState: $permissionState,
+                        permissionCenter: permissionCenter,
                         onTryDemo: onTryDemo,
                         onScanReceipt: onScanReceipt,
                         onFinish: onFinish
@@ -62,7 +62,7 @@ struct TabbyOnboardingView: View {
 
 private struct OnboardingPageView: View {
     let step: OnboardingStep
-    @Binding var permissionState: PermissionState
+    @ObservedObject var permissionCenter: PermissionCenter
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -78,9 +78,10 @@ private struct OnboardingPageView: View {
                         .foregroundStyle(TabbyColor.ink.opacity(0.7))
                         .lineSpacing(3)
                 }
+                .padding(.bottom, 6)
 
                 if step == .permissions {
-                    PermissionsList(state: $permissionState)
+                    PermissionsList(permissionCenter: permissionCenter)
                 } else {
                     FeatureList(bullets: step.bullets)
                 }
@@ -178,7 +179,7 @@ private struct FeatureRow: View {
 }
 
 private struct PermissionsList: View {
-    @Binding var state: PermissionState
+    @ObservedObject var permissionCenter: PermissionCenter
 
     var body: some View {
         VStack(spacing: 12) {
@@ -186,19 +187,46 @@ private struct PermissionsList: View {
                 title: "Camera",
                 detail: "Required to scan receipts",
                 isRequired: true,
-                isOn: $state.cameraEnabled
+                isOn: Binding(
+                    get: { permissionCenter.cameraEnabled },
+                    set: { newValue in
+                        if newValue {
+                            permissionCenter.requestCamera()
+                        } else {
+                            permissionCenter.openSettings()
+                        }
+                    }
+                )
             )
             PermissionToggleRow(
                 title: "Contacts",
                 detail: "Find friends fast",
                 isRequired: false,
-                isOn: $state.contactsEnabled
+                isOn: Binding(
+                    get: { permissionCenter.contactsEnabled },
+                    set: { newValue in
+                        if newValue {
+                            permissionCenter.requestContacts()
+                        } else {
+                            permissionCenter.openSettings()
+                        }
+                    }
+                )
             )
             PermissionToggleRow(
                 title: "Location",
                 detail: "Match restaurant names",
                 isRequired: false,
-                isOn: $state.locationEnabled
+                isOn: Binding(
+                    get: { permissionCenter.locationEnabled },
+                    set: { newValue in
+                        if newValue {
+                            permissionCenter.requestLocation()
+                        } else {
+                            permissionCenter.openSettings()
+                        }
+                    }
+                )
             )
         }
     }
@@ -246,12 +274,13 @@ private struct BottomBar: View {
     let step: OnboardingStep
     @Binding var selection: Int
     let total: Int
-    @Binding var permissionState: PermissionState
+    @ObservedObject var permissionCenter: PermissionCenter
     var onTryDemo: () -> Void
     var onScanReceipt: () -> Void
     var onFinish: () -> Void
 
     var body: some View {
+        let canContinue = step.primaryCTAEnabled(cameraEnabled: permissionCenter.cameraEnabled)
         VStack(spacing: 10) {
             if step == .permissions {
                 Button {
@@ -265,7 +294,7 @@ private struct BottomBar: View {
                             RoundedRectangle(cornerRadius: 16, style: .continuous)
                                 .fill(
                                     LinearGradient(
-                                        colors: step.primaryCTAEnabled(permissionState)
+                                        colors: canContinue
                                             ? [TabbyColor.ink, TabbyColor.ink.opacity(0.85)]
                                             : [TabbyColor.ink.opacity(0.35), TabbyColor.ink.opacity(0.35)],
                                         startPoint: .topLeading,
@@ -279,7 +308,7 @@ private struct BottomBar: View {
                         )
                 }
                 .foregroundStyle(TabbyColor.canvas)
-                .disabled(!step.primaryCTAEnabled(permissionState))
+                .disabled(!canContinue)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .animation(.easeOut(duration: 0.2), value: step == .permissions)
             }
@@ -292,7 +321,7 @@ private struct BottomBar: View {
 
     private func handlePrimary() {
         if step == .permissions {
-            if step.primaryCTAEnabled(permissionState) {
+            if step.primaryCTAEnabled(cameraEnabled: permissionCenter.cameraEnabled) {
                 onScanReceipt()
                 onFinish()
             }
@@ -629,20 +658,14 @@ private enum OnboardingStep: Int, CaseIterable, Identifiable {
         }
     }
 
-    func primaryCTAEnabled(_ permissions: PermissionState) -> Bool {
+    func primaryCTAEnabled(cameraEnabled: Bool) -> Bool {
         switch self {
         case .permissions:
-            return permissions.cameraEnabled
+            return cameraEnabled
         default:
             return true
         }
     }
-}
-
-private struct PermissionState {
-    var cameraEnabled: Bool = false
-    var contactsEnabled: Bool = false
-    var locationEnabled: Bool = false
 }
 
 private extension Collection {
