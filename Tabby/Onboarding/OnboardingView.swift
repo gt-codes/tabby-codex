@@ -54,6 +54,7 @@ struct TabbyOnboardingView: View {
                     .padding(.horizontal, 24)
                     .padding(.bottom, safeBottom + 12)
                 }
+
             }
             .frame(width: geo.size.width, height: geo.size.height)
         }
@@ -281,6 +282,7 @@ private struct BottomBar: View {
 
     var body: some View {
         let canContinue = step.primaryCTAEnabled(cameraEnabled: permissionCenter.cameraEnabled)
+        let isLastStep = selection == total - 1
         VStack(spacing: 10) {
             if step == .permissions {
                 Button {
@@ -311,6 +313,15 @@ private struct BottomBar: View {
                 .disabled(!canContinue)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .animation(.easeOut(duration: 0.2), value: step == .permissions)
+            }
+
+            if isLastStep {
+                Button("Skip for now") {
+                    onFinish()
+                }
+                .font(TabbyType.caption)
+                .foregroundStyle(TabbyColor.ink.opacity(0.5))
+                .padding(.top, 4)
             }
 
             OnboardingPageIndicator(selection: $selection, total: total)
@@ -674,6 +685,22 @@ private extension Collection {
     }
 }
 
+private struct OnboardingPreviewHost: View {
+    @State private var finished = false
+
+    var body: some View {
+        if finished {
+            ContentView()
+        } else {
+            TabbyOnboardingView(
+                onTryDemo: { finished = true },
+                onScanReceipt: { finished = true },
+                onFinish: { finished = true }
+            )
+        }
+    }
+}
+
 #Preview {
-    TabbyOnboardingView()
+    OnboardingPreviewHost()
 }

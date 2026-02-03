@@ -16,6 +16,8 @@
 	<string>Tabby needs camera access to scan receipts.</string>
 	<key>NSContactsUsageDescription</key>
 	<string>Tabby uses contacts to add friends quickly.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Tabby needs photo access to import receipt images.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Tabby uses your location to match restaurant names.</string>
 	<key>UIApplicationSceneManifest</key>

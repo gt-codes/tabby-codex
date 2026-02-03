@@ -2,6 +2,7 @@ import AVFoundation
 import Contacts
 import CoreLocation
 import SwiftUI
+import UIKit
 
 @MainActor
 final class PermissionCenter: NSObject, ObservableObject {
