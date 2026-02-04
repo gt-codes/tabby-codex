@@ -12,24 +12,39 @@ struct ContentView: View {
 }
 
 private struct RootTabView: View {
+    @EnvironmentObject private var linkRouter: AppLinkRouter
+    @State private var selectedTab = 0
+
     var body: some View {
-        TabView {
+        TabView(selection: $selectedTab) {
             ReceiptsView()
                 .tabItem {
                     Label("Receipts", systemImage: "doc.text")
                 }
+                .tag(0)
 
             JoinView()
                 .tabItem {
                     Label("Join", systemImage: "qrcode")
                 }
+                .tag(1)
 
             HistoryView()
                 .tabItem {
                     Label("History", systemImage: "clock")
                 }
+                .tag(2)
         }
         .tint(TabbyColor.ink)
+        .onReceive(linkRouter.$joinReceiptId) { receiptId in
+            guard receiptId != nil else { return }
+            selectedTab = 1
+        }
+        .onAppear {
+            if linkRouter.joinReceiptId != nil {
+                selectedTab = 1
+            }
+        }
     }
 }
 
@@ -41,6 +56,8 @@ private struct ReceiptsView: View {
     @State private var draftItems: [ReceiptItem] = []
     @State private var photoPickerItems: [PhotosPickerItem] = []
     @State private var showPhotoPicker = false
+    @State private var activeShareReceipt: Receipt?
+    @State private var isLoadingRemoteReceipts = false
 
     var body: some View {
         NavigationStack {
@@ -52,12 +69,23 @@ private struct ReceiptsView: View {
                     VStack(alignment: .leading, spacing: 16) {
                         receiptsHeader
                         Spacer(minLength: 0)
-                        EmptyStateView(
-                            title: "No active receipt",
-                            detail: "Scan a receipt to start splitting.",
-                            icon: "doc.text.viewfinder",
-                            tint: TabbyColor.accent
-                        )
+                        if isLoadingRemoteReceipts {
+                            VStack(spacing: 12) {
+                                ProgressView()
+                                    .tint(TabbyColor.ink)
+                                Text("Loading shared receipts")
+                                    .font(TabbyType.caption)
+                                    .foregroundStyle(TabbyColor.ink.opacity(0.6))
+                            }
+                            .frame(maxWidth: .infinity)
+                        } else {
+                            EmptyStateView(
+                                title: "No active receipt",
+                                detail: "Scan a receipt to start splitting.",
+                                icon: "doc.text.viewfinder",
+                                tint: TabbyColor.accent
+                            )
+                        }
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 24)
@@ -67,7 +95,12 @@ private struct ReceiptsView: View {
                         VStack(alignment: .leading, spacing: 18) {
                             receiptsHeader
                             ForEach(receipts) { receipt in
-                                ReceiptSummaryCard(receipt: receipt)
+                                Button {
+                                    activeShareReceipt = receipt
+                                } label: {
+                                    ReceiptSummaryCard(receipt: receipt, showsShareHint: true)
+                                }
+                                .buttonStyle(.plain)
                             }
                             Spacer(minLength: 0)
                         }
@@ -110,6 +143,9 @@ private struct ReceiptsView: View {
                     .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
             }
+            .sheet(item: $activeShareReceipt) { receipt in
+                ShareReceiptView(receipt: receipt)
+            }
             .photosPicker(
                 isPresented: $showPhotoPicker,
                 selection: $photoPickerItems,
@@ -134,20 +170,17 @@ private struct ReceiptsView: View {
                     await MainActor.run { photoPickerItems = [] }
                 }
             }
+            .task {
+                await loadRemoteReceipts()
+            }
         }
     }
 
     private var receiptsHeader: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Receipts")
-                    .font(TabbyType.display)
-                    .foregroundStyle(TabbyColor.ink)
-            }
-            Text("Start a new bill or continue an active one.")
-                .font(TabbyType.body)
-                .foregroundStyle(TabbyColor.ink.opacity(0.65))
-        }
+        PageSectionHeader(
+            title: "Receipts",
+            detail: "Start a new bill or continue an active one."
+        )
     }
 
     private func startScan() {
@@ -177,30 +210,187 @@ private struct ReceiptsView: View {
         }
         draftItems = []
         showItemsSheet = false
+        activeShareReceipt = newReceipt
+    }
+
+    private func loadRemoteReceipts() async {
+        await MainActor.run { isLoadingRemoteReceipts = true }
+
+        do {
+            let remoteReceipts = try await ConvexService.shared.fetchRecentReceipts(limit: 30)
+            print("[Tabby] Fetched \(remoteReceipts.count) remote receipts")
+            if !remoteReceipts.isEmpty {
+                await MainActor.run {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        receipts = mergeReceipts(local: receipts, remote: remoteReceipts)
+                    }
+                }
+            }
+        } catch {
+            print("[Tabby] Failed to fetch remote receipts: \(error)")
+        }
+
+        await MainActor.run { isLoadingRemoteReceipts = false }
+    }
+
+    private func mergeReceipts(local: [Receipt], remote: [Receipt]) -> [Receipt] {
+        var merged = local
+
+        for incoming in remote {
+            let alreadyExists = merged.contains { existing in
+                existing.items == incoming.items && abs(existing.date.timeIntervalSince(incoming.date)) < 15
+            }
+            if !alreadyExists {
+                merged.append(incoming)
+            }
+        }
+
+        return merged.sorted { $0.date > $1.date }
     }
 }
 
 private struct JoinView: View {
+    @EnvironmentObject private var linkRouter: AppLinkRouter
+    @State private var code = ""
+    @State private var joinRequest: JoinRequest?
+
     var body: some View {
         NavigationStack {
             ZStack {
-                ReceiptsBackground()
+                TabbyGradientBackground()
                     .ignoresSafeArea()
-                VStack {
-                    Spacer()
+
+                VStack(alignment: .leading, spacing: 16) {
+                    joinHeader
+
+                    Spacer(minLength: 0)
+
                     EmptyStateView(
-                        title: "Join a receipt",
-                        detail: "Scan a QR code to claim your items.",
+                        title: "No shared receipt yet",
+                        detail: "Enter a 6-digit code from your friend to claim your items.",
                         icon: "qrcode.viewfinder",
                         tint: TabbyColor.mint
                     )
+
+                    joinCodeEntryCard
+
                     Spacer()
                 }
                 .padding(.horizontal, 24)
+                .padding(.top, 12)
             }
-            .navigationTitle("Join")
+            .sheet(item: $joinRequest) { request in
+                JoinReceiptView(receiptId: request.id)
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        // Reserved for a future quick action on the Join screen.
+                    } label: {
+                        GlassIconLabel(icon: "qrcode.viewfinder")
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .onReceive(linkRouter.$joinReceiptId) { receiptId in
+                guard receiptId != nil else { return }
+                consumePendingJoinCode()
+            }
+            .onAppear {
+                consumePendingJoinCode()
+            }
         }
     }
+
+    private var joinHeader: some View {
+        PageSectionHeader(
+            title: "Join",
+            detail: "Scan the host's QR code or enter the share code to claim your items."
+        )
+    }
+
+    private var joinCodeEntryCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Enter code")
+                .font(TabbyType.label)
+                .foregroundStyle(TabbyColor.ink.opacity(0.6))
+                .textCase(.uppercase)
+
+            TextField("e.g. 123456", text: $code)
+                .font(TabbyType.title)
+                .textInputAutocapitalization(.characters)
+                .autocorrectionDisabled()
+                .keyboardType(.numberPad)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(TabbyColor.canvasAccent)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(TabbyColor.subtle, lineWidth: 1)
+                        )
+                )
+                .onChange(of: code) { newValue in
+                    let digitsOnly = newValue.filter { $0.isNumber }
+                    let limited = String(digitsOnly.prefix(6))
+                    if limited != newValue {
+                        code = limited
+                    }
+                }
+
+            Text("6-digit code")
+                .font(TabbyType.caption)
+                .foregroundStyle(TabbyColor.ink.opacity(0.55))
+
+            Button {
+                guard code.count == 6 else { return }
+                joinRequest = JoinRequest(id: code)
+                code = ""
+            } label: {
+                Text("Join receipt")
+                    .font(TabbyType.bodyBold)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [TabbyColor.mint, TabbyColor.mint.opacity(0.8)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .stroke(TabbyColor.subtle, lineWidth: 1)
+                            )
+                    )
+                    .foregroundStyle(TabbyColor.canvas)
+            }
+            .disabled(code.count != 6)
+            .opacity(code.count == 6 ? 1 : 0.6)
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(TabbyColor.subtle, lineWidth: 1)
+                )
+        )
+    }
+
+    private func consumePendingJoinCode() {
+        guard let receiptId = linkRouter.joinReceiptId else { return }
+        joinRequest = JoinRequest(id: receiptId)
+        linkRouter.joinReceiptId = nil
+    }
+}
+
+private struct JoinRequest: Identifiable {
+    let id: String
 }
 
 private struct HistoryView: View {
@@ -209,7 +399,12 @@ private struct HistoryView: View {
             ZStack {
                 ReceiptsBackground()
                     .ignoresSafeArea()
-                VStack {
+                VStack(alignment: .leading, spacing: 16) {
+                    PageSectionHeader(
+                        title: "History",
+                        detail: "Review your previous receipts and split sessions."
+                    )
+
                     Spacer()
                     EmptyStateView(
                         title: "Receipt history",
@@ -220,8 +415,34 @@ private struct HistoryView: View {
                     Spacer()
                 }
                 .padding(.horizontal, 24)
+                .padding(.top, 12)
             }
-            .navigationTitle("History")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        // Reserved for a future quick action on the History screen.
+                    } label: {
+                        GlassIconLabel(icon: "clock.arrow.circlepath")
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+}
+
+private struct PageSectionHeader: View {
+    let title: String
+    let detail: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(TabbyType.display)
+                .foregroundStyle(TabbyColor.ink)
+            Text(detail)
+                .font(TabbyType.body)
+                .foregroundStyle(TabbyColor.ink.opacity(0.65))
         }
     }
 }
@@ -690,13 +911,8 @@ private struct GlassIconLabel: View {
 
     var body: some View {
         Image(systemName: icon)
-            .font(.system(size: 16, weight: .semibold))
+            .font(.system(size: 16, weight: .medium))
             .foregroundStyle(TabbyColor.ink)
-            .padding(10)
-            .background(
-                Circle()
-                    .stroke(TabbyColor.subtle, lineWidth: 1)
-            )
     }
 }
 
@@ -815,6 +1031,7 @@ private struct ReceiptPaperCard: View {
 
 private struct ReceiptSummaryCard: View {
     let receipt: Receipt
+    var showsShareHint = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -844,6 +1061,15 @@ private struct ReceiptSummaryCard: View {
                 Text("+ \(receipt.items.count - 3) more items")
                     .font(TabbyType.caption)
                     .foregroundStyle(TabbyColor.ink.opacity(0.6))
+            }
+
+            if showsShareHint {
+                HStack(spacing: 6) {
+                    Image(systemName: "square.and.arrow.up")
+                    Text("Tap to reopen sharing")
+                }
+                .font(TabbyType.caption)
+                .foregroundStyle(TabbyColor.ink.opacity(0.55))
             }
 
             ReceiptDottedDivider()
@@ -934,7 +1160,7 @@ private func hideKeyboard() {
     UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
 }
 
-struct Receipt: Identifiable, Hashable {
+struct Receipt: Identifiable, Hashable, Codable {
     let id: UUID
     let date: Date
     var items: [ReceiptItem]
@@ -952,7 +1178,7 @@ struct Receipt: Identifiable, Hashable {
     }
 }
 
-struct ReceiptItem: Identifiable, Hashable {
+struct ReceiptItem: Identifiable, Hashable, Codable {
     let id: UUID
     var name: String
     var quantity: Int

@@ -16,6 +16,3 @@ DerivedData/
 .build/
 Packages/
 Package.resolved
-
-# App icon / asset catalogs (keep contents)
-**/*.xcassets/*.appiconset/*.png
