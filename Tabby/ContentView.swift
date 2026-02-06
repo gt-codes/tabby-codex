@@ -1,3 +1,4 @@
+import AVFoundation
 import PhotosUI
 import SwiftUI
 import UIKit
@@ -13,7 +14,9 @@ struct ContentView: View {
 
 private struct RootTabView: View {
     @EnvironmentObject private var linkRouter: AppLinkRouter
+    @AppStorage("isSignedIn") private var isSignedIn = ConvexService.shared.hasCachedSession
     @State private var selectedTab = 0
+    @State private var showProfileSignInSheet = false
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -29,16 +32,38 @@ private struct RootTabView: View {
                 }
                 .tag(1)
 
-            HistoryView()
-                .tabItem {
-                    Label("History", systemImage: "clock")
+            Group {
+                if isSignedIn {
+                    ProfileView()
+                } else {
+                    ProfileSignInRequiredView {
+                        showProfileSignInSheet = true
+                    }
                 }
-                .tag(2)
+            }
+            .tabItem {
+                Label("Profile", systemImage: "person.crop.circle")
+            }
+            .tag(2)
+        }
+        .sheet(isPresented: $showProfileSignInSheet) {
+            ProfileSignInSheet()
+                .presentationDetents([.height(320)])
+                .presentationDragIndicator(.visible)
         }
         .tint(TabbyColor.ink)
         .onReceive(linkRouter.$joinReceiptId) { receiptId in
             guard receiptId != nil else { return }
             selectedTab = 1
+        }
+        .onChange(of: selectedTab) { tab in
+            guard tab == 2, !isSignedIn else { return }
+            showProfileSignInSheet = true
+        }
+        .onChange(of: isSignedIn) { signedIn in
+            if signedIn {
+                showProfileSignInSheet = false
+            }
         }
         .onAppear {
             if linkRouter.joinReceiptId != nil {
@@ -48,7 +73,181 @@ private struct RootTabView: View {
     }
 }
 
+private struct ProfileSignInRequiredView: View {
+    var onSignInTap: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                ReceiptsBackground()
+                    .ignoresSafeArea()
+
+                VStack(spacing: 16) {
+                    EmptyStateView(
+                        title: "Profile requires an account",
+                        detail: "Sign in with Apple to sync receipts and keep settings in one place.",
+                        icon: "person.crop.circle.badge.plus",
+                        tint: TabbyColor.accent
+                    )
+
+                    Button(action: onSignInTap) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "apple.logo")
+                            Text("Sign in with Apple")
+                        }
+                        .font(TabbyType.bodyBold)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(TabbyColor.ink)
+                        )
+                        .foregroundStyle(TabbyColor.canvas)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 12)
+            }
+        }
+    }
+}
+
+private struct ProfileSignInSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage("isSignedIn") private var isSignedIn = ConvexService.shared.hasCachedSession
+    @State private var isBusy = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        VStack(spacing: 16) {
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(TabbyColor.ink.opacity(0.18))
+                .frame(width: 36, height: 4)
+                .padding(.top, 8)
+
+            Text("Sign in to sync this device")
+                .font(TabbyType.title)
+                .foregroundStyle(TabbyColor.ink)
+
+            Text("After sign in, we migrate guest receipts from this device into your Apple account.")
+                .font(TabbyType.caption)
+                .foregroundStyle(TabbyColor.ink.opacity(0.62))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 8)
+
+            Button(action: handlePrimaryAction) {
+                HStack(spacing: 8) {
+                    if isBusy {
+                        ProgressView()
+                            .tint(TabbyColor.canvas)
+                    } else {
+                        Image(systemName: "apple.logo")
+                    }
+                    Text(primaryActionTitle)
+                }
+                .font(TabbyType.bodyBold)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 13)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(TabbyColor.ink)
+                )
+                .foregroundStyle(TabbyColor.canvas)
+            }
+            .disabled(isBusy)
+
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(TabbyType.caption)
+                    .foregroundStyle(Color.red.opacity(0.9))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 8)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 14)
+        .background(
+            LinearGradient(
+                colors: [TabbyColor.canvas, TabbyColor.canvasAccent],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
+    }
+
+    private var primaryActionTitle: String {
+        if isBusy {
+            return isSignedIn ? "Migrating..." : "Signing in..."
+        }
+        return isSignedIn ? "Retry migration" : "Sign in with Apple"
+    }
+
+    private func handlePrimaryAction() {
+        errorMessage = nil
+        isBusy = true
+
+        if isSignedIn {
+            Task { await migrateGuestReceipts() }
+            return
+        }
+
+        Task { await signInThenMigrate() }
+    }
+
+    @MainActor
+    private func signInThenMigrate() async {
+        do {
+            _ = try await ConvexService.shared.signInWithApple()
+        } catch {
+            errorMessage = "Sign in with Apple failed."
+            isBusy = false
+            return
+        }
+
+        await migrateGuestReceipts()
+    }
+
+    @MainActor
+    private func migrateGuestReceipts() async {
+        do {
+            let migratedCount = try await ConvexService.shared.migrateGuestDataToSignedInAccount()
+            print("[Tabby] Migrated \(migratedCount) guest receipts to signed-in account")
+            isBusy = false
+            dismiss()
+        } catch {
+            errorMessage = "Signed in, but couldn't migrate guest receipts yet. Try again."
+            isBusy = false
+        }
+    }
+}
+
 private struct ReceiptsView: View {
+    private let headerControlSize: CGFloat = 36
+
+    private enum ReceiptFilter: String, CaseIterable, Identifiable {
+        case active
+        case archived
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .active:
+                return "Active"
+            case .archived:
+                return "Archived"
+            }
+        }
+    }
+
+    @AppStorage("isSignedIn") private var isSignedIn = ConvexService.shared.hasCachedSession
+    @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var permissionCenter = PermissionCenter()
+    @AppStorage("shouldShowCameraPermissionNudge") private var shouldShowCameraPermissionNudge = false
+    @AppStorage("useLocationForReceiptCapture") private var useLocationForReceiptCapture = true
     @State private var showScanner = false
     @State private var isProcessing = false
     @State private var showItemsSheet = false
@@ -58,83 +257,44 @@ private struct ReceiptsView: View {
     @State private var showPhotoPicker = false
     @State private var activeShareReceipt: Receipt?
     @State private var isLoadingRemoteReceipts = false
+    @State private var showCameraPermissionSheet = false
+    @State private var pendingScanAfterPermission = false
+    @State private var selectedFilter: ReceiptFilter = .active
 
     var body: some View {
         NavigationStack {
             ZStack {
                 ReceiptsBackground()
                     .ignoresSafeArea()
-
-                if receipts.isEmpty {
-                    VStack(alignment: .leading, spacing: 16) {
-                        receiptsHeader
-                        Spacer(minLength: 0)
-                        if isLoadingRemoteReceipts {
-                            VStack(spacing: 12) {
-                                ProgressView()
-                                    .tint(TabbyColor.ink)
-                                Text("Loading shared receipts")
-                                    .font(TabbyType.caption)
-                                    .foregroundStyle(TabbyColor.ink.opacity(0.6))
-                            }
-                            .frame(maxWidth: .infinity)
-                        } else {
-                            EmptyStateView(
-                                title: "No active receipt",
-                                detail: "Scan a receipt to start splitting.",
-                                icon: "doc.text.viewfinder",
-                                tint: TabbyColor.accent
-                            )
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.horizontal, 24)
-                    .padding(.top, 12)
-                } else {
-                    ScrollView(showsIndicators: false) {
-                        VStack(alignment: .leading, spacing: 18) {
-                            receiptsHeader
-                            ForEach(receipts) { receipt in
-                                Button {
-                                    activeShareReceipt = receipt
-                                } label: {
-                                    ReceiptSummaryCard(receipt: receipt, showsShareHint: true)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                            Spacer(minLength: 0)
-                        }
-                        .padding(.horizontal, 24)
-                        .padding(.top, 12)
-                    }
+                VStack(alignment: .leading, spacing: 18) {
+                    receiptsHeader
+                    receiptsTabContent
                 }
-
-            }
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Button {
-                            startScan()
-                        } label: {
-                            Label("Scan receipt", systemImage: "doc.text.viewfinder")
-                        }
-
-                        Button {
-                            showPhotoPicker = true
-                        } label: {
-                            Label("Upload receipt", systemImage: "photo.on.rectangle")
-                        }
-                    } label: {
-                        GlassIconLabel(icon: "doc.viewfinder")
-                    }
-                    .buttonStyle(.plain)
-                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(.horizontal, 24)
+                .padding(.top, 12)
             }
             .fullScreenCover(isPresented: $showScanner) {
                 DocumentScannerView { images in
                     showScanner = false
                     process(images: images)
                 }
+            }
+            .sheet(isPresented: $showCameraPermissionSheet) {
+                CameraPermissionSheet(
+                    status: permissionCenter.cameraStatus,
+                    onEnable: {
+                        shouldShowCameraPermissionNudge = false
+                        permissionCenter.requestCamera()
+                    },
+                    onLater: {
+                        shouldShowCameraPermissionNudge = false
+                        pendingScanAfterPermission = false
+                        showCameraPermissionSheet = false
+                    }
+                )
+                .presentationDetents([.height(360)])
+                .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $showItemsSheet) {
                 ItemsSheetView(items: $draftItems, isProcessing: isProcessing) { submittedItems in
@@ -173,19 +333,197 @@ private struct ReceiptsView: View {
             .task {
                 await loadRemoteReceipts()
             }
+            .onAppear {
+                maybeShowCameraPermissionNudgeIfNeeded()
+            }
+            .onChange(of: isSignedIn) { _ in
+                Task {
+                    await loadRemoteReceipts()
+                }
+            }
+            .onChange(of: scenePhase) { newPhase in
+                guard newPhase == .active else { return }
+                permissionCenter.refreshStatuses()
+                continuePendingScanIfPossible()
+            }
+            .onChange(of: permissionCenter.cameraStatus) { _ in
+                continuePendingScanIfPossible()
+            }
         }
     }
 
     private var receiptsHeader: some View {
-        PageSectionHeader(
-            title: "Receipts",
-            detail: "Start a new bill or continue an active one."
-        )
+        HStack(spacing: 12) {
+            receiptFilterToggle
+                .frame(maxWidth: .infinity)
+
+            receiptActionsMenu
+        }
+    }
+
+    private var receiptFilterToggle: some View {
+        Picker("Receipts filter", selection: $selectedFilter) {
+            ForEach(ReceiptFilter.allCases) { filter in
+                Text(filter.title).tag(filter)
+            }
+        }
+        .pickerStyle(.segmented)
+        .frame(height: headerControlSize)
+    }
+
+    private var receiptsTabContent: some View {
+        TabView(selection: $selectedFilter) {
+            receiptPane(for: .active)
+                .tag(ReceiptFilter.active)
+
+            receiptPane(for: .archived)
+                .tag(ReceiptFilter.archived)
+        }
+        .tabViewStyle(.page(indexDisplayMode: .never))
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    @ViewBuilder
+    private func receiptPane(for filter: ReceiptFilter) -> some View {
+        let paneReceipts = receipts(for: filter)
+
+        if paneReceipts.isEmpty {
+            if isLoadingRemoteReceipts && receipts.isEmpty {
+                loadingState
+            } else {
+                emptyState(for: filter)
+            }
+        } else {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 18) {
+                    ForEach(paneReceipts) { receipt in
+                        Button {
+                            activeShareReceipt = receipt
+                        } label: {
+                            ReceiptSummaryCard(receipt: receipt, showsShareHint: true)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private var loadingState: some View {
+        VStack(spacing: 12) {
+            Spacer(minLength: 0)
+            ProgressView()
+                .tint(TabbyColor.ink)
+            Text("Loading shared receipts")
+                .font(TabbyType.caption)
+                .foregroundStyle(TabbyColor.ink.opacity(0.6))
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var receiptActionsMenu: some View {
+        Menu {
+            Button {
+                startScan()
+            } label: {
+                Label("Scan receipt", systemImage: "doc.text.viewfinder")
+            }
+
+            Button {
+                showPhotoPicker = true
+            } label: {
+                Label("Upload receipt", systemImage: "photo.on.rectangle")
+            }
+        } label: {
+            Image(systemName: "doc.viewfinder")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(Color(uiColor: .label))
+                .frame(width: headerControlSize, height: headerControlSize)
+                .background(
+                    Circle()
+                        .fill(Color(uiColor: .secondarySystemBackground))
+                        .overlay(
+                            Circle()
+                                .stroke(Color(uiColor: .separator).opacity(0.28), lineWidth: 1)
+                        )
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func emptyState(for filter: ReceiptFilter) -> some View {
+        VStack {
+            Spacer(minLength: 0)
+            switch filter {
+            case .active:
+                EmptyStateView(
+                    title: "No active receipt",
+                    detail: "Scan a receipt to start splitting.",
+                    icon: "doc.text.viewfinder",
+                    tint: TabbyColor.accent
+                )
+            case .archived:
+                EmptyStateView(
+                    title: "No archived receipts",
+                    detail: "Archived receipts will show up here.",
+                    icon: "archivebox",
+                    tint: TabbyColor.violet
+                )
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func receipts(for filter: ReceiptFilter) -> [Receipt] {
+        switch filter {
+        case .active:
+            return receipts.filter(\.isActive)
+        case .archived:
+            return receipts.filter { !$0.isActive }
+        }
     }
 
     private func startScan() {
         guard VNDocumentCameraViewController.isSupported else { return }
+        shouldShowCameraPermissionNudge = false
+        permissionCenter.refreshStatuses()
+
+        guard permissionCenter.cameraEnabled else {
+            pendingScanAfterPermission = true
+            showCameraPermissionSheet = true
+            return
+        }
+
         showScanner = true
+    }
+
+    private func maybeShowCameraPermissionNudgeIfNeeded() {
+        guard shouldShowCameraPermissionNudge else { return }
+        permissionCenter.refreshStatuses()
+
+        if permissionCenter.cameraEnabled {
+            shouldShowCameraPermissionNudge = false
+            return
+        }
+
+        showCameraPermissionSheet = true
+    }
+
+    private func continuePendingScanIfPossible() {
+        if permissionCenter.cameraEnabled {
+            showCameraPermissionSheet = false
+            shouldShowCameraPermissionNudge = false
+
+            if pendingScanAfterPermission {
+                pendingScanAfterPermission = false
+                showScanner = true
+            }
+        }
     }
 
     private func process(images: [UIImage]) {
@@ -193,6 +531,7 @@ private struct ReceiptsView: View {
         draftItems = []
         isProcessing = true
         showItemsSheet = true
+        maybeRequestLocationPermissionForReceiptCapture()
         Task {
             let items = await OCRProcessor.shared.extractItems(from: images)
             await MainActor.run {
@@ -211,6 +550,12 @@ private struct ReceiptsView: View {
         draftItems = []
         showItemsSheet = false
         activeShareReceipt = newReceipt
+    }
+
+    private func maybeRequestLocationPermissionForReceiptCapture() {
+        guard useLocationForReceiptCapture else { return }
+        permissionCenter.refreshStatuses()
+        permissionCenter.requestLocation()
     }
 
     private func loadRemoteReceipts() async {
@@ -237,15 +582,117 @@ private struct ReceiptsView: View {
         var merged = local
 
         for incoming in remote {
-            let alreadyExists = merged.contains { existing in
+            if let exactMatchIndex = merged.firstIndex(where: { $0.id == incoming.id }) {
+                merged[exactMatchIndex] = incoming
+                continue
+            }
+
+            if let fuzzyMatchIndex = merged.firstIndex(where: { existing in
                 existing.items == incoming.items && abs(existing.date.timeIntervalSince(incoming.date)) < 15
+            }) {
+                merged[fuzzyMatchIndex] = incoming
+                continue
             }
-            if !alreadyExists {
-                merged.append(incoming)
-            }
+
+            merged.append(incoming)
         }
 
         return merged.sorted { $0.date > $1.date }
+    }
+}
+
+private struct CameraPermissionSheet: View {
+    let status: AVAuthorizationStatus
+    var onEnable: () -> Void
+    var onLater: () -> Void
+
+    private var title: String {
+        switch status {
+        case .denied, .restricted:
+            return "Enable camera in Settings"
+        default:
+            return "Enable camera when you scan"
+        }
+    }
+
+    private var detail: String {
+        switch status {
+        case .denied, .restricted:
+            return "Tabby only asks for camera when you scan receipts. Open Settings to allow access."
+        default:
+            return "Camera access is only needed for scanning receipts. You can keep using upload anytime."
+        }
+    }
+
+    private var actionTitle: String {
+        switch status {
+        case .denied, .restricted:
+            return "Open Settings"
+        default:
+            return "Enable Camera"
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(TabbyColor.ink.opacity(0.18))
+                .frame(width: 36, height: 4)
+                .padding(.top, 8)
+
+            ZStack {
+                Circle()
+                    .fill(TabbyColor.accent.opacity(0.16))
+                    .frame(width: 64, height: 64)
+                Image(systemName: "camera.viewfinder")
+                    .font(.system(size: 26, weight: .semibold))
+                    .foregroundStyle(TabbyColor.accent)
+            }
+
+            VStack(spacing: 6) {
+                Text(title)
+                    .font(TabbyType.title)
+                    .foregroundStyle(TabbyColor.ink)
+                Text(detail)
+                    .font(TabbyType.body)
+                    .foregroundStyle(TabbyColor.ink.opacity(0.68))
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(2)
+            }
+            .padding(.horizontal, 8)
+
+            VStack(spacing: 8) {
+                Button(actionTitle) {
+                    onEnable()
+                }
+                .font(TabbyType.bodyBold)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 13)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(TabbyColor.ink)
+                )
+                .foregroundStyle(TabbyColor.canvas)
+
+                Button("Not now") {
+                    onLater()
+                }
+                .font(TabbyType.caption)
+                .foregroundStyle(TabbyColor.ink.opacity(0.55))
+            }
+            .padding(.top, 2)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 14)
+        .background(
+            LinearGradient(
+                colors: [TabbyColor.canvas, TabbyColor.canvasAccent],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
     }
 }
 
@@ -253,6 +700,7 @@ private struct JoinView: View {
     @EnvironmentObject private var linkRouter: AppLinkRouter
     @State private var code = ""
     @State private var joinRequest: JoinRequest?
+    @FocusState private var isCodeFieldFocused: Bool
 
     var body: some View {
         NavigationStack {
@@ -260,36 +708,27 @@ private struct JoinView: View {
                 TabbyGradientBackground()
                     .ignoresSafeArea()
 
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 24) {
                     joinHeader
-
-                    Spacer(minLength: 0)
-
-                    EmptyStateView(
-                        title: "No shared receipt yet",
-                        detail: "Enter a 6-digit code from your friend to claim your items.",
-                        icon: "qrcode.viewfinder",
-                        tint: TabbyColor.mint
-                    )
-
                     joinCodeEntryCard
-
-                    Spacer()
+                    Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 24)
-                .padding(.top, 12)
+                .padding(.top, 24)
             }
             .sheet(item: $joinRequest) { request in
                 JoinReceiptView(receiptId: request.id)
             }
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
                     Button {
-                        // Reserved for a future quick action on the Join screen.
+                        isCodeFieldFocused = false
+                        hideKeyboard()
                     } label: {
-                        GlassIconLabel(icon: "qrcode.viewfinder")
+                        Image(systemName: "keyboard.chevron.compact.down")
+                            .font(.system(size: 16, weight: .semibold))
                     }
-                    .buttonStyle(.plain)
                 }
             }
             .onReceive(linkRouter.$joinReceiptId) { receiptId in
@@ -305,30 +744,35 @@ private struct JoinView: View {
     private var joinHeader: some View {
         PageSectionHeader(
             title: "Join",
-            detail: "Scan the host's QR code or enter the share code to claim your items."
+            detail: "Enter the 6-digit share code to claim your items."
         )
     }
 
     private var joinCodeEntryCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Enter code")
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Share code")
                 .font(TabbyType.label)
                 .foregroundStyle(TabbyColor.ink.opacity(0.6))
                 .textCase(.uppercase)
 
-            TextField("e.g. 123456", text: $code)
-                .font(TabbyType.title)
+            TextField("123456", text: $code)
+                .font(.system(size: 34, weight: .semibold, design: .rounded))
+                .kerning(4)
+                .monospacedDigit()
+                .multilineTextAlignment(.center)
                 .textInputAutocapitalization(.characters)
+                .textContentType(.oneTimeCode)
                 .autocorrectionDisabled()
                 .keyboardType(.numberPad)
+                .focused($isCodeFieldFocused)
                 .padding(.horizontal, 14)
-                .padding(.vertical, 12)
+                .padding(.vertical, 14)
                 .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(TabbyColor.canvasAccent)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(TabbyColor.canvas)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .stroke(TabbyColor.subtle, lineWidth: 1)
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .stroke(code.isEmpty ? TabbyColor.subtle : TabbyColor.accent.opacity(0.38), lineWidth: 1)
                         )
                 )
                 .onChange(of: code) { newValue in
@@ -338,48 +782,49 @@ private struct JoinView: View {
                         code = limited
                     }
                 }
+                .submitLabel(.go)
+                .onSubmit {
+                    joinWithCodeIfValid()
+                }
 
-            Text("6-digit code")
+            Text("Use the code your friend shared with you.")
                 .font(TabbyType.caption)
                 .foregroundStyle(TabbyColor.ink.opacity(0.55))
 
-            Button {
-                guard code.count == 6 else { return }
-                joinRequest = JoinRequest(id: code)
-                code = ""
-            } label: {
+            Button(action: joinWithCodeIfValid) {
                 Text("Join receipt")
                     .font(TabbyType.bodyBold)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
                     .background(
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [TabbyColor.mint, TabbyColor.mint.opacity(0.8)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
+                            .fill(code.count == 6 ? TabbyColor.ink : TabbyColor.ink.opacity(0.18))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                                     .stroke(TabbyColor.subtle, lineWidth: 1)
                             )
                     )
-                    .foregroundStyle(TabbyColor.canvas)
+                    .foregroundStyle(code.count == 6 ? TabbyColor.canvas : TabbyColor.ink.opacity(0.45))
             }
             .disabled(code.count != 6)
-            .opacity(code.count == 6 ? 1 : 0.6)
         }
-        .padding(16)
+        .padding(18)
         .background(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(.ultraThinMaterial)
+                .fill(TabbyColor.canvas.opacity(0.78))
                 .overlay(
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
                         .stroke(TabbyColor.subtle, lineWidth: 1)
                 )
         )
+    }
+
+    private func joinWithCodeIfValid() {
+        guard code.count == 6 else { return }
+        isCodeFieldFocused = false
+        hideKeyboard()
+        joinRequest = JoinRequest(id: code)
+        code = ""
     }
 
     private func consumePendingJoinCode() {
@@ -393,41 +838,506 @@ private struct JoinRequest: Identifiable {
     let id: String
 }
 
-private struct HistoryView: View {
+private enum AppThemeOption: String, CaseIterable, Identifiable {
+    case auto
+    case light
+    case dark
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .auto:
+            return "Auto"
+        case .light:
+            return "Light"
+        case .dark:
+            return "Dark"
+        }
+    }
+}
+
+private enum PreferredPaymentMethod: String, CaseIterable, Identifiable {
+    case appleCash = "apple_cash"
+    case venmo = "venmo"
+    case cashApp = "cash_app"
+    case zelle = "zelle"
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .appleCash:
+            return "Apple Cash"
+        case .venmo:
+            return "Venmo"
+        case .cashApp:
+            return "Cash App"
+        case .zelle:
+            return "Zelle"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .appleCash:
+            return "apple.logo"
+        case .venmo:
+            return "v.circle.fill"
+        case .cashApp:
+            return "c.square.fill"
+        case .zelle:
+            return "z.square.fill"
+        }
+    }
+}
+
+private struct ProfileView: View {
+    @AppStorage("profileDisplayName") private var displayName = ""
+    @AppStorage("profilePreferredPaymentMethod") private var preferredPaymentMethodRaw = PreferredPaymentMethod.appleCash.rawValue
+    @AppStorage("appTheme") private var appThemeRaw = AppThemeOption.auto.rawValue
+    @AppStorage("useLocationForReceiptCapture") private var useLocationForReceiptCapture = true
+    @AppStorage("isSignedIn") private var isSignedIn = ConvexService.shared.hasCachedSession
+
+    @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var profileImage: UIImage?
+    @State private var accountEmail: String?
+    @State private var isBusy = false
+    @State private var errorMessage: String?
+    @State private var lastSyncedDisplayName = ""
+
     var body: some View {
         NavigationStack {
-            ZStack {
-                ReceiptsBackground()
-                    .ignoresSafeArea()
-                VStack(alignment: .leading, spacing: 16) {
-                    PageSectionHeader(
-                        title: "History",
-                        detail: "Review your previous receipts and split sessions."
-                    )
-
-                    Spacer()
-                    EmptyStateView(
-                        title: "Receipt history",
-                        detail: "Past receipts will appear here.",
-                        icon: "clock",
-                        tint: TabbyColor.violet
-                    )
-                    Spacer()
-                }
-                .padding(.horizontal, 24)
-                .padding(.top, 12)
+            Form {
+                profileHeaderSection
+                accountMenuSection
+                appearanceSection
+                receiptCaptureSection
+                authSection
+                errorSection
             }
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        // Reserved for a future quick action on the History screen.
-                    } label: {
-                        GlassIconLabel(icon: "clock.arrow.circlepath")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .task {
+            await refreshProfile()
+        }
+        .onChange(of: selectedPhotoItem) { newItem in
+            guard let newItem else { return }
+            Task {
+                if let data = try? await newItem.loadTransferable(type: Data.self),
+                   let image = UIImage(data: data) {
+                    let encoded = ProfilePhotoStore.optimizedJPEGData(for: image) ?? data
+                    try? ProfilePhotoStore.save(data: encoded)
+                    let previewImage = UIImage(data: encoded) ?? image
+                    await MainActor.run {
+                        profileImage = previewImage
                     }
-                    .buttonStyle(.plain)
+                    await uploadProfilePhotoIfNeeded(imageData: encoded)
                 }
             }
         }
+    }
+
+    private var profileHeaderSection: some View {
+        Section {
+            VStack(spacing: 10) {
+                ProfileAvatarView(image: profileImage, size: 78)
+                Text(profileDisplayName)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.primary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+        }
+    }
+
+    private var accountMenuSection: some View {
+        Section {
+            NavigationLink {
+                PersonalInfoView(
+                    displayName: $displayName,
+                    accountEmail: accountEmail,
+                    profileImage: profileImage,
+                    selectedPhotoItem: $selectedPhotoItem,
+                    onSaveName: {
+                        Task { await saveDisplayNameIfNeeded() }
+                    }
+                )
+            } label: {
+                settingsRow(title: "Personal Information", systemImage: "person.text.rectangle")
+            }
+
+            NavigationLink {
+                PaymentAndShippingView(
+                    preferredPaymentMethodRaw: $preferredPaymentMethodRaw,
+                    onSavePreferredPaymentMethod: {
+                        Task { await savePreferredPaymentMethod() }
+                    }
+                )
+            } label: {
+                settingsRow(title: "Payment & Shipping", systemImage: "creditcard")
+            }
+        }
+    }
+
+    private var profileDisplayName: String {
+        let trimmed = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Your Account" : trimmed
+    }
+
+    private func settingsRow(title: String, systemImage: String) -> some View {
+        Label {
+            Text(title)
+                .foregroundStyle(.primary)
+        } icon: {
+            Image(systemName: systemImage)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var appearanceSection: some View {
+        Section {
+            Picker("App theme", selection: $appThemeRaw) {
+                ForEach(AppThemeOption.allCases) { option in
+                    Text(option.title).tag(option.rawValue)
+                }
+            }
+        } header: {
+            Text("Appearance")
+        }
+    }
+
+    private var receiptCaptureSection: some View {
+        Section {
+            Toggle("Match location", isOn: $useLocationForReceiptCapture)
+                .tint(TabbyColor.mint)
+        } header: {
+            Text("Receipt capture")
+        } footer: {
+            Text("When enabled, Tabby can use location permission during receipt capture to help match nearby merchant names.")
+        }
+    }
+
+    private var authSection: some View {
+        Section("Sign-In & Security") {
+            if isSignedIn {
+                Button(role: .destructive) {
+                    Task { await handleLogout() }
+                } label: {
+                    HStack {
+                        if isBusy {
+                            ProgressView()
+                        }
+                        Text("Log out")
+                    }
+                }
+            } else {
+                Button {
+                    Task { await handleSignIn() }
+                } label: {
+                    HStack(spacing: 8) {
+                        if isBusy {
+                            ProgressView()
+                        } else {
+                            Image(systemName: "apple.logo")
+                        }
+                        Text("Sign in with Apple")
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var errorSection: some View {
+        if let errorMessage {
+            Section {
+                Text(errorMessage)
+                    .font(TabbyType.caption)
+                    .foregroundStyle(Color.red.opacity(0.9))
+            }
+        }
+    }
+
+    private func refreshProfile() async {
+        profileImage = ProfilePhotoStore.loadImage()
+        do {
+            let profile = try await ConvexService.shared.fetchMyProfile()
+            let remoteImage = await ProfilePhotoStore.loadImage(fromRemoteReference: profile?.pictureURL)
+            await MainActor.run {
+                if let profile {
+                    accountEmail = profile.email
+                    if let remoteImage {
+                        profileImage = remoteImage
+                        if let encoded = ProfilePhotoStore.optimizedJPEGData(for: remoteImage) {
+                            try? ProfilePhotoStore.save(data: encoded)
+                        }
+                    }
+                    let remoteName = profile.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    if displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                       let remoteName = profile.name,
+                       !remoteName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        displayName = remoteName
+                    }
+                    lastSyncedDisplayName = remoteName
+                    if let remotePayment = profile.preferredPaymentMethod,
+                       PreferredPaymentMethod(rawValue: remotePayment) != nil {
+                        preferredPaymentMethodRaw = remotePayment
+                    }
+                } else {
+                    accountEmail = nil
+                    lastSyncedDisplayName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                errorMessage = nil
+            }
+        } catch {
+            await MainActor.run {
+                errorMessage = "Couldn't load profile right now."
+            }
+        }
+    }
+
+    private func saveDisplayNameIfNeeded() async {
+        guard isSignedIn else { return }
+        let trimmedName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedName != lastSyncedDisplayName else { return }
+        do {
+            try await ConvexService.shared.updateMyProfile(
+                name: trimmedName.isEmpty ? nil : trimmedName,
+                preferredPaymentMethod: nil
+            )
+            await MainActor.run {
+                lastSyncedDisplayName = trimmedName
+                errorMessage = nil
+            }
+        } catch {
+            await MainActor.run {
+                errorMessage = "Couldn't save your name."
+            }
+        }
+    }
+
+    private func savePreferredPaymentMethod() async {
+        guard isSignedIn else { return }
+        do {
+            try await ConvexService.shared.updateMyProfile(
+                name: nil,
+                preferredPaymentMethod: preferredPaymentMethodRaw
+            )
+            await MainActor.run { errorMessage = nil }
+        } catch {
+            await MainActor.run {
+                errorMessage = "Couldn't save preferred payment method."
+            }
+        }
+    }
+
+    private func uploadProfilePhotoIfNeeded(imageData: Data) async {
+        guard isSignedIn else { return }
+        do {
+            try await ConvexService.shared.uploadMyProfilePhoto(imageData)
+            await refreshProfile()
+            await MainActor.run { errorMessage = nil }
+        } catch {
+            print("[Tabby] Profile photo upload failed: \(error.localizedDescription)")
+            await MainActor.run {
+                errorMessage = "Couldn't upload your profile photo."
+            }
+        }
+    }
+
+    private func handleSignIn() async {
+        await MainActor.run { isBusy = true }
+        do {
+            _ = try await ConvexService.shared.signInWithApple()
+            _ = try? await ConvexService.shared.migrateGuestDataToSignedInAccount()
+            await refreshProfile()
+        } catch {
+            await MainActor.run {
+                errorMessage = "Sign in with Apple failed."
+            }
+        }
+        await MainActor.run { isBusy = false }
+    }
+
+    private func handleLogout() async {
+        await MainActor.run { isBusy = true }
+        await ConvexService.shared.signOut()
+        await MainActor.run {
+            accountEmail = nil
+            lastSyncedDisplayName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+            errorMessage = nil
+            isBusy = false
+        }
+    }
+}
+
+private struct ProfileAvatarView: View {
+    let image: UIImage?
+    var size: CGFloat = 52
+
+    var body: some View {
+        if let image {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(width: size, height: size)
+                .clipShape(Circle())
+                .overlay(
+                    Circle()
+                        .stroke(Color(uiColor: .separator), lineWidth: 0.5)
+                )
+        } else {
+            Circle()
+                .fill(Color(uiColor: .systemGray5))
+                .frame(width: size, height: size)
+                .overlay(
+                    Image(systemName: "person.fill")
+                        .font(.system(size: max(14, size * 0.36), weight: .semibold))
+                        .foregroundStyle(Color(uiColor: .secondaryLabel))
+                )
+                .overlay(
+                    Circle()
+                        .stroke(Color(uiColor: .separator), lineWidth: 0.5)
+                )
+        }
+    }
+}
+
+private struct PersonalInfoView: View {
+    @Binding var displayName: String
+    let accountEmail: String?
+    let profileImage: UIImage?
+    @Binding var selectedPhotoItem: PhotosPickerItem?
+    let onSaveName: () -> Void
+
+    var body: some View {
+        Form {
+            Section {
+                HStack {
+                    Spacer()
+                    ProfileAvatarView(image: profileImage, size: 90)
+                    Spacer()
+                }
+
+                PhotosPicker(selection: $selectedPhotoItem, matching: .images, photoLibrary: .shared()) {
+                    Text("Change Photo")
+                        .frame(maxWidth: .infinity)
+                        .foregroundStyle(.blue)
+                }
+                .buttonStyle(.plain)
+            }
+
+            Section {
+                LabeledContent("Name") {
+                    TextField("Name", text: $displayName)
+                        .multilineTextAlignment(.trailing)
+                        .textInputAutocapitalization(.words)
+                        .autocorrectionDisabled()
+                        .submitLabel(.done)
+                        .onSubmit(onSaveName)
+                }
+
+                HStack {
+                    Text("Email")
+                    Spacer(minLength: 12)
+                    Text(accountEmail ?? "Not available")
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+            }
+        }
+        .navigationTitle("Personal Information")
+        .navigationBarTitleDisplayMode(.inline)
+        .onDisappear(perform: onSaveName)
+    }
+}
+
+private struct PaymentAndShippingView: View {
+    @Binding var preferredPaymentMethodRaw: String
+    let onSavePreferredPaymentMethod: () -> Void
+
+    private var selectedMethod: PreferredPaymentMethod {
+        PreferredPaymentMethod(rawValue: preferredPaymentMethodRaw) ?? .appleCash
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                ForEach(PreferredPaymentMethod.allCases) { method in
+                    Button {
+                        guard preferredPaymentMethodRaw != method.rawValue else { return }
+                        preferredPaymentMethodRaw = method.rawValue
+                        onSavePreferredPaymentMethod()
+                    } label: {
+                        HStack {
+                            Text(method.title)
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            if method == selectedMethod {
+                                Image(systemName: "checkmark")
+                                    .foregroundStyle(.blue)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            } header: {
+                Text("Preferred Payment")
+            } footer: {
+                Text("This is your default suggestion when settling up.")
+            }
+        }
+        .navigationTitle("Payment & Shipping")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+private enum ProfilePhotoStore {
+    private static var fileURL: URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("profile-photo.jpg")
+    }
+
+    static func loadImage() -> UIImage? {
+        UIImage(contentsOfFile: fileURL.path)
+    }
+
+    static func save(data: Data) throws {
+        try data.write(to: fileURL, options: .atomic)
+    }
+
+    static func optimizedJPEGData(for image: UIImage) -> Data? {
+        let maxDimension: CGFloat = 640
+        let longestEdge = max(image.size.width, image.size.height)
+        let scale = longestEdge > maxDimension ? (maxDimension / longestEdge) : 1
+        let targetSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let renderer = UIGraphicsImageRenderer(size: targetSize)
+        let resizedImage = renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: targetSize))
+        }
+        return resizedImage.jpegData(compressionQuality: 0.72)
+    }
+
+    static func loadImage(fromRemoteReference reference: String?) async -> UIImage? {
+        guard let reference else { return nil }
+
+        if reference.hasPrefix("data:image") {
+            guard let commaIndex = reference.firstIndex(of: ",") else { return nil }
+            let base64Payload = String(reference[reference.index(after: commaIndex)...])
+            guard let data = Data(base64Encoded: base64Payload) else { return nil }
+            return UIImage(data: data)
+        }
+
+        guard let url = URL(string: reference) else { return nil }
+        guard let (data, response) = try? await URLSession.shared.data(from: url) else { return nil }
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else { return nil }
+        return UIImage(data: data)
     }
 }
 
@@ -1164,11 +2074,13 @@ struct Receipt: Identifiable, Hashable, Codable {
     let id: UUID
     let date: Date
     var items: [ReceiptItem]
+    var isActive: Bool
 
-    init(id: UUID = UUID(), date: Date = Date(), items: [ReceiptItem]) {
+    init(id: UUID = UUID(), date: Date = Date(), items: [ReceiptItem], isActive: Bool = true) {
         self.id = id
         self.date = date
         self.items = items
+        self.isActive = isActive
     }
 
     var total: Double {

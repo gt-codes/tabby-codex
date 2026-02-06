@@ -2,12 +2,10 @@ import SwiftUI
 
 struct TabbyOnboardingView: View {
     @State private var selection = 0
-    @StateObject private var permissionCenter = PermissionCenter()
 
     private let steps = OnboardingStep.allCases
 
-    var onTryDemo: () -> Void = {}
-    var onScanReceipt: () -> Void = {}
+    var onSignInWithApple: () async -> Bool = { false }
     var onFinish: () -> Void = {}
 
     var body: some View {
@@ -28,7 +26,7 @@ struct TabbyOnboardingView: View {
 
                 TabView(selection: $selection) {
                     ForEach(steps) { step in
-                        OnboardingPageView(step: step, permissionCenter: permissionCenter)
+                        OnboardingPageView(step: step)
                             .tag(step.index)
                             .padding(.horizontal, 24)
                             .padding(.top, topInset)
@@ -46,9 +44,7 @@ struct TabbyOnboardingView: View {
                         step: currentStep,
                         selection: $selection,
                         total: steps.count,
-                        permissionCenter: permissionCenter,
-                        onTryDemo: onTryDemo,
-                        onScanReceipt: onScanReceipt,
+                        onSignInWithApple: onSignInWithApple,
                         onFinish: onFinish
                     )
                     .padding(.horizontal, 24)
@@ -63,37 +59,49 @@ struct TabbyOnboardingView: View {
 
 private struct OnboardingPageView: View {
     let step: OnboardingStep
-    @ObservedObject var permissionCenter: PermissionCenter
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 16) {
-                HeroPanel(step: step)
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(step.title)
-                        .font(TabbyType.display)
-                        .foregroundStyle(TabbyColor.ink)
-                        .lineSpacing(2)
-                    Text(step.subtitle)
-                        .font(TabbyType.body)
-                        .foregroundStyle(TabbyColor.ink.opacity(0.7))
-                        .lineSpacing(3)
-                }
-                .padding(.bottom, 6)
+                if step == .ready {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(step.title)
+                            .font(TabbyType.display)
+                            .foregroundStyle(TabbyColor.ink)
+                            .lineSpacing(2)
+                        Text(step.subtitle)
+                            .font(TabbyType.body)
+                            .foregroundStyle(TabbyColor.ink.opacity(0.7))
+                            .lineSpacing(3)
+                    }
+                    .padding(.top, 26)
 
-                if step == .permissions {
-                    PermissionsList(permissionCenter: permissionCenter)
+                    GetStartedPanel()
+                        .padding(.top, 8)
                 } else {
-                    FeatureList(bullets: step.bullets)
-                }
+                    HeroPanel(step: step)
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(step.title)
+                            .font(TabbyType.display)
+                            .foregroundStyle(TabbyColor.ink)
+                            .lineSpacing(2)
+                        Text(step.subtitle)
+                            .font(TabbyType.body)
+                            .foregroundStyle(TabbyColor.ink.opacity(0.7))
+                            .lineSpacing(3)
+                    }
+                    .padding(.bottom, 6)
 
-                if let footnote = step.footnote {
-                    Text(footnote)
-                        .font(TabbyType.caption)
-                        .foregroundStyle(TabbyColor.ink.opacity(0.55))
-                        .frame(maxWidth: .infinity)
-                        .multilineTextAlignment(.center)
-                        .padding(.top, 4)
+                    FeatureList(bullets: step.bullets)
+
+                    if let footnote = step.footnote {
+                        Text(footnote)
+                            .font(TabbyType.caption)
+                            .foregroundStyle(TabbyColor.ink.opacity(0.55))
+                            .frame(maxWidth: .infinity)
+                            .multilineTextAlignment(.center)
+                            .padding(.top, 4)
+                    }
                 }
 
                 Spacer(minLength: 0)
@@ -102,6 +110,50 @@ private struct OnboardingPageView: View {
             .padding(.bottom, 18)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+}
+
+private struct GetStartedPanel: View {
+    @State private var rise = false
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [TabbyColor.canvasAccent.opacity(0.95), TabbyColor.canvas],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .stroke(TabbyColor.subtle, lineWidth: 1)
+                )
+
+            Circle()
+                .fill(TabbyColor.accent.opacity(0.22))
+                .frame(width: 170, height: 170)
+                .blur(radius: 12)
+                .offset(x: rise ? 18 : -6, y: rise ? -18 : -2)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Welcome to Tabby")
+                    .font(TabbyType.hero)
+                    .foregroundStyle(TabbyColor.ink)
+                Text("Split your first receipt in under a minute.")
+                    .font(TabbyType.body)
+                    .foregroundStyle(TabbyColor.ink.opacity(0.68))
+            }
+            .padding(22)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+        }
+        .frame(height: 230)
+        .onAppear {
+            withAnimation(.easeInOut(duration: 4.2).repeatForever(autoreverses: true)) {
+                rise.toggle()
+            }
+        }
     }
 }
 
@@ -179,144 +231,69 @@ private struct FeatureRow: View {
     }
 }
 
-private struct PermissionsList: View {
-    @ObservedObject var permissionCenter: PermissionCenter
-
-    var body: some View {
-        VStack(spacing: 12) {
-            PermissionToggleRow(
-                title: "Camera",
-                detail: "Required to scan receipts",
-                isRequired: true,
-                isOn: Binding(
-                    get: { permissionCenter.cameraEnabled },
-                    set: { newValue in
-                        if newValue {
-                            permissionCenter.requestCamera()
-                        } else {
-                            permissionCenter.openSettings()
-                        }
-                    }
-                )
-            )
-            PermissionToggleRow(
-                title: "Contacts",
-                detail: "Find friends fast",
-                isRequired: false,
-                isOn: Binding(
-                    get: { permissionCenter.contactsEnabled },
-                    set: { newValue in
-                        if newValue {
-                            permissionCenter.requestContacts()
-                        } else {
-                            permissionCenter.openSettings()
-                        }
-                    }
-                )
-            )
-            PermissionToggleRow(
-                title: "Location",
-                detail: "Match restaurant names",
-                isRequired: false,
-                isOn: Binding(
-                    get: { permissionCenter.locationEnabled },
-                    set: { newValue in
-                        if newValue {
-                            permissionCenter.requestLocation()
-                        } else {
-                            permissionCenter.openSettings()
-                        }
-                    }
-                )
-            )
-        }
-    }
-}
-
-private struct PermissionToggleRow: View {
-    let title: String
-    let detail: String
-    let isRequired: Bool
-    @Binding var isOn: Bool
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(title)
-                        .font(TabbyType.bodyBold)
-                        .foregroundStyle(TabbyColor.ink)
-                    if isRequired {
-                        Text("Required")
-                            .font(TabbyType.label)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(
-                                Capsule()
-                                    .fill(TabbyColor.sun)
-                            )
-                            .foregroundStyle(TabbyColor.ink)
-                    }
-                }
-                Text(detail)
-                    .font(TabbyType.caption)
-                    .foregroundStyle(TabbyColor.ink.opacity(0.6))
-            }
-            Spacer()
-            Toggle("", isOn: $isOn)
-                .labelsHidden()
-                .tint(TabbyColor.accent)
-        }
-        .padding(12)
-    }
-}
-
 private struct BottomBar: View {
     let step: OnboardingStep
     @Binding var selection: Int
     let total: Int
-    @ObservedObject var permissionCenter: PermissionCenter
-    var onTryDemo: () -> Void
-    var onScanReceipt: () -> Void
+    var onSignInWithApple: () async -> Bool
     var onFinish: () -> Void
+    @State private var isSigningIn = false
+    @State private var signInError: String?
 
     var body: some View {
-        let canContinue = step.primaryCTAEnabled(cameraEnabled: permissionCenter.cameraEnabled)
         let isLastStep = selection == total - 1
         VStack(spacing: 10) {
-            if step == .permissions {
+            if step == .ready {
                 Button {
-                    handlePrimary()
+                    beginAppleSignIn()
                 } label: {
-                    Text("Scan Receipt")
-                        .font(TabbyType.bodyBold)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .fill(
-                                    LinearGradient(
-                                        colors: canContinue
-                                            ? [TabbyColor.ink, TabbyColor.ink.opacity(0.85)]
-                                            : [TabbyColor.ink.opacity(0.35), TabbyColor.ink.opacity(0.35)],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
+                    HStack(spacing: 8) {
+                        if isSigningIn {
+                            ProgressView()
+                                .tint(TabbyColor.canvas)
+                        } else {
+                            Image(systemName: "apple.logo")
+                                .font(.system(size: 16, weight: .semibold))
+                        }
+
+                        Text(isSigningIn ? "Signing in..." : "Sign in with Apple")
+                            .font(TabbyType.bodyBold)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: isSigningIn
+                                        ? [TabbyColor.ink.opacity(0.45), TabbyColor.ink.opacity(0.45)]
+                                        : [TabbyColor.ink, TabbyColor.ink.opacity(0.85)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
                                 )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                        .stroke(TabbyColor.subtle, lineWidth: 1)
-                                )
-                        )
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .stroke(TabbyColor.subtle, lineWidth: 1)
+                            )
+                    )
                 }
                 .foregroundStyle(TabbyColor.canvas)
-                .disabled(!canContinue)
+                .disabled(isSigningIn)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
-                .animation(.easeOut(duration: 0.2), value: step == .permissions)
+                .animation(.easeOut(duration: 0.2), value: step == .ready)
+
+                if let signInError {
+                    Text(signInError)
+                        .font(TabbyType.caption)
+                        .foregroundStyle(Color.red.opacity(0.85))
+                        .multilineTextAlignment(.center)
+                        .padding(.top, 2)
+                }
             }
 
             if isLastStep {
-                Button("Skip for now") {
+                Button("Continue without account") {
                     onFinish()
                 }
                 .font(TabbyType.caption)
@@ -330,16 +307,18 @@ private struct BottomBar: View {
         .padding(.top, 6)
     }
 
-    private func handlePrimary() {
-        if step == .permissions {
-            if step.primaryCTAEnabled(cameraEnabled: permissionCenter.cameraEnabled) {
-                onScanReceipt()
-                onFinish()
+    private func beginAppleSignIn() {
+        signInError = nil
+        isSigningIn = true
+
+        Task {
+            let signedIn = await onSignInWithApple()
+            await MainActor.run {
+                isSigningIn = false
+                if !signedIn {
+                    signInError = "Sign-in didn't finish. You can continue without an account."
+                }
             }
-        } else if selection < total - 1 {
-            selection += 1
-        } else {
-            onFinish()
         }
     }
 }
@@ -376,7 +355,7 @@ private struct OnboardingPageIndicator: View {
         }
         .frame(height: 12)
         .accessibilityLabel("Onboarding pages")
-        .accessibilityValue("Page \\(selection + 1) of \\(total)")
+        .accessibilityValue("Page \(selection + 1) of \(total)")
     }
 }
 
@@ -470,8 +449,7 @@ private enum OnboardingStep: Int, CaseIterable, Identifiable {
     case scan
     case share
     case pay
-    case privacy
-    case permissions
+    case ready
 
     var id: Int { rawValue }
     var index: Int { rawValue }
@@ -486,10 +464,8 @@ private enum OnboardingStep: Int, CaseIterable, Identifiable {
             return "Invite the table"
         case .pay:
             return "Settle fast"
-        case .privacy:
-            return "Local-first by design"
-        case .permissions:
-            return "Enable permissions"
+        case .ready:
+            return "Get started"
         }
     }
 
@@ -503,10 +479,8 @@ private enum OnboardingStep: Int, CaseIterable, Identifiable {
             return "QR is primary. Contacts and SMS are there when you need them."
         case .pay:
             return "Item split waits for host confirmation. Bill split is instant."
-        case .privacy:
-            return "All receipts stay on device. Upgrade later if you want sync."
-        case .permissions:
-            return "Turn on what you need. Camera is required to scan receipts."
+        case .ready:
+            return "Sign in now, or keep going and create an account later."
         }
     }
 
@@ -520,10 +494,8 @@ private enum OnboardingStep: Int, CaseIterable, Identifiable {
             return "Share"
         case .pay:
             return "Pay"
-        case .privacy:
-            return "Private"
-        case .permissions:
-            return "Ready"
+        case .ready:
+            return "Let's go"
         }
     }
 
@@ -537,10 +509,8 @@ private enum OnboardingStep: Int, CaseIterable, Identifiable {
             return "QR at the table"
         case .pay:
             return "Fast settlement"
-        case .privacy:
-            return "Local by default"
-        case .permissions:
-            return "Enable access"
+        case .ready:
+            return "Start splitting"
         }
     }
 
@@ -554,10 +524,8 @@ private enum OnboardingStep: Int, CaseIterable, Identifiable {
             return "qrcode"
         case .pay:
             return "creditcard"
-        case .privacy:
-            return "lock.shield"
-        case .permissions:
-            return "checkmark.seal"
+        case .ready:
+            return "sparkles"
         }
     }
 
@@ -571,10 +539,8 @@ private enum OnboardingStep: Int, CaseIterable, Identifiable {
             return TabbyColor.mint
         case .pay:
             return TabbyColor.violet
-        case .privacy:
-            return TabbyColor.brass
-        case .permissions:
-            return TabbyColor.ink
+        case .ready:
+            return TabbyColor.accent
         }
     }
 
@@ -588,9 +554,7 @@ private enum OnboardingStep: Int, CaseIterable, Identifiable {
             return TabbyColor.mint
         case .pay:
             return TabbyColor.violet
-        case .privacy:
-            return TabbyColor.brass
-        case .permissions:
+        case .ready:
             return TabbyColor.accent
         }
     }
@@ -605,10 +569,8 @@ private enum OnboardingStep: Int, CaseIterable, Identifiable {
             return TabbyColor.sun
         case .pay:
             return TabbyColor.mint
-        case .privacy:
-            return TabbyColor.sun
-        case .permissions:
-            return TabbyColor.sun
+        case .ready:
+            return TabbyColor.mint
         }
     }
 
@@ -638,13 +600,7 @@ private enum OnboardingStep: Int, CaseIterable, Identifiable {
                 OnboardingBullet(icon: "bolt.fill", title: "Bill split", detail: "Even or custom splits can pay immediately.", tint: TabbyColor.violet),
                 OnboardingBullet(icon: "dollarsign.circle", title: "Pay links", detail: "Apple Pay, Venmo, Cash App, Zelle.", tint: TabbyColor.violet)
             ]
-        case .privacy:
-            return [
-                OnboardingBullet(icon: "lock.fill", title: "No signup", detail: "Start splitting right away.", tint: TabbyColor.accent),
-                OnboardingBullet(icon: "iphone", title: "On-device storage", detail: "Receipts stay local by default.", tint: TabbyColor.accent),
-                OnboardingBullet(icon: "arrow.up.right", title: "Upgrade later", detail: "Optional account for sync and speed.", tint: TabbyColor.accent)
-            ]
-        case .permissions:
+        case .ready:
             return []
         }
     }
@@ -653,30 +609,11 @@ private enum OnboardingStep: Int, CaseIterable, Identifiable {
         switch self {
         case .hero:
             return "Swipe to see how it works"
-        case .permissions:
-            return "You can change permissions later in Settings."
         default:
             return nil
         }
     }
 
-    var primaryCTA: String {
-        switch self {
-        case .permissions:
-            return "Scan Receipt"
-        default:
-            return "Next"
-        }
-    }
-
-    func primaryCTAEnabled(cameraEnabled: Bool) -> Bool {
-        switch self {
-        case .permissions:
-            return cameraEnabled
-        default:
-            return true
-        }
-    }
 }
 
 private extension Collection {
@@ -693,8 +630,7 @@ private struct OnboardingPreviewHost: View {
             ContentView()
         } else {
             TabbyOnboardingView(
-                onTryDemo: { finished = true },
-                onScanReceipt: { finished = true },
+                onSignInWithApple: { true },
                 onFinish: { finished = true }
             )
         }

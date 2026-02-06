@@ -4,6 +4,7 @@ output/
 
 # Xcode
 DerivedData/
+.derived/
 *.xcuserstate
 *.xcuserdata/
 *.moved-aside

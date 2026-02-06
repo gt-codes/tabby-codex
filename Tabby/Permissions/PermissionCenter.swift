@@ -31,6 +31,12 @@ final class PermissionCenter: NSObject, ObservableObject {
         locationStatus == .authorizedAlways || locationStatus == .authorizedWhenInUse
     }
 
+    func refreshStatuses() {
+        cameraStatus = AVCaptureDevice.authorizationStatus(for: .video)
+        contactsStatus = CNContactStore.authorizationStatus(for: .contacts)
+        locationStatus = CLLocationManager.authorizationStatus()
+    }
+
     func requestCamera() {
         if cameraStatus == .notDetermined {
             AVCaptureDevice.requestAccess(for: .video) { [weak self] _ in
