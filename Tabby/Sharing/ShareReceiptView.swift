@@ -191,6 +191,19 @@ final class ReceiptShareViewModel: ObservableObject {
         if case .ready = state, !force { return }
         state = .loading
         do {
+            let existingCode = receipt.shareCode?.filter(\.isNumber) ?? ""
+            if existingCode.count == 6 {
+                let url = AppClipLink.url(for: existingCode)
+                state = .ready(
+                    SharePayload(
+                        id: receipt.remoteID ?? receipt.id.uuidString,
+                        code: existingCode,
+                        url: url
+                    )
+                )
+                return
+            }
+
             let response = try await ConvexService.shared.createReceiptShare(receipt)
             let code = response.code.filter { $0.isNumber }
             guard code.count == 6 else {

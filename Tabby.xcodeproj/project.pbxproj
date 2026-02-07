@@ -10,6 +10,7 @@
 		0A1F3F6E4207418D9B6A3D11 /* AppLinkRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1F3F6E4207418D9B6A3D01 /* AppLinkRouter.swift */; };
 		0A1F3F6E4207418D9B6A3D12 /* ConvexService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1F3F6E4207418D9B6A3D02 /* ConvexService.swift */; };
 		0A1F3F6E4207418D9B6A3D13 /* JoinReceiptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1F3F6E4207418D9B6A3D03 /* JoinReceiptView.swift */; };
+		0A1F3F6E4207418D9B6A3D16 /* ReceiptActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1F3F6E4207418D9B6A3D07 /* ReceiptActivityView.swift */; };
 		0A1F3F6E4207418D9B6A3D14 /* ShareReceiptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1F3F6E4207418D9B6A3D04 /* ShareReceiptView.swift */; };
 		0A1F3F6E4207418D9B6A3D15 /* TabbyGradientBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1F3F6E4207418D9B6A3D05 /* TabbyGradientBackground.swift */; };
 		0A1F3F6E4207418D9B6A3D21 /* ConvexMobile in Frameworks */ = {isa = PBXBuildFile; productRef = 0A1F3F6E4207418D9B6A3D22 /* ConvexMobile */; };
@@ -51,6 +52,7 @@
 		0A1F3F6E4207418D9B6A3D01 /* AppLinkRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLinkRouter.swift; sourceTree = "<group>"; };
 		0A1F3F6E4207418D9B6A3D02 /* ConvexService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvexService.swift; sourceTree = "<group>"; };
 		0A1F3F6E4207418D9B6A3D03 /* JoinReceiptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JoinReceiptView.swift; sourceTree = "<group>"; };
+		0A1F3F6E4207418D9B6A3D07 /* ReceiptActivityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceiptActivityView.swift; sourceTree = "<group>"; };
 		0A1F3F6E4207418D9B6A3D04 /* ShareReceiptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareReceiptView.swift; sourceTree = "<group>"; };
 		0A1F3F6E4207418D9B6A3D05 /* TabbyGradientBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabbyGradientBackground.swift; sourceTree = "<group>"; };
 		6412DD8D2F32CEFA0085765F /* Tabby.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Tabby.entitlements; sourceTree = "<group>"; };
@@ -128,6 +130,7 @@
 				0A1F3F6E4207418D9B6A3D01 /* AppLinkRouter.swift */,
 				0A1F3F6E4207418D9B6A3D02 /* ConvexService.swift */,
 				0A1F3F6E4207418D9B6A3D03 /* JoinReceiptView.swift */,
+				0A1F3F6E4207418D9B6A3D07 /* ReceiptActivityView.swift */,
 				0A1F3F6E4207418D9B6A3D04 /* ShareReceiptView.swift */,
 				0A1F3F6E4207418D9B6A3D05 /* TabbyGradientBackground.swift */,
 			);
@@ -292,6 +295,7 @@
 				0A1F3F6E4207418D9B6A3D11 /* AppLinkRouter.swift in Sources */,
 				0A1F3F6E4207418D9B6A3D12 /* ConvexService.swift in Sources */,
 				0A1F3F6E4207418D9B6A3D13 /* JoinReceiptView.swift in Sources */,
+				0A1F3F6E4207418D9B6A3D16 /* ReceiptActivityView.swift in Sources */,
 				0A1F3F6E4207418D9B6A3D14 /* ShareReceiptView.swift in Sources */,
 				0A1F3F6E4207418D9B6A3D15 /* TabbyGradientBackground.swift in Sources */,
 				3F9FE3DF03054ED2B74533B5 /* TabbyApp.swift in Sources */,

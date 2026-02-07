@@ -68,6 +68,47 @@ struct UserProfile {
     let preferredPaymentMethod: String?
 }
 
+struct ReceiptLiveParticipant: Identifiable, Hashable {
+    let id: String
+    let name: String
+    let joinedAt: Date
+    let isCurrentUser: Bool
+}
+
+struct ReceiptLiveItem: Identifiable, Hashable {
+    let id: String
+    let name: String
+    let quantity: Int
+    let remainingQuantity: Int
+    let viewerClaimedQuantity: Int
+    let price: Double?
+
+    var unitPrice: Double? {
+        guard let price else { return nil }
+        return price / Double(max(quantity, 1))
+    }
+
+    var viewerClaimedTotal: Double {
+        (unitPrice ?? 0) * Double(viewerClaimedQuantity)
+    }
+}
+
+struct ReceiptLiveState: Hashable {
+    let remoteId: String
+    let code: String
+    let createdAt: Date
+    let isActive: Bool
+    let viewerParticipantKey: String?
+    let participants: [ReceiptLiveParticipant]
+    let items: [ReceiptLiveItem]
+
+    var claimedTotal: Double {
+        items.reduce(0) { partial, item in
+            partial + item.viewerClaimedTotal
+        }
+    }
+}
+
 private struct RemoteReceiptItemResponse: Decodable {
     let clientItemId: String?
     let name: String
@@ -83,6 +124,44 @@ private struct RemoteReceiptResponse: Decodable {
     let createdAt: Double
     let clientReceiptId: String?
     let isActive: Bool?
+    let canManage: Bool?
+}
+
+private struct RemoteReceiptLiveParticipantResponse: Decodable {
+    let participantKey: String
+    let displayName: String
+    let joinedAt: Double
+}
+
+private struct RemoteReceiptLiveItemResponse: Decodable {
+    let key: String
+    let clientItemId: String?
+    let name: String
+    let quantity: Double
+    let price: Double?
+    let sortOrder: Double
+    let claimedQuantity: Double
+    let viewerClaimedQuantity: Double
+    let remainingQuantity: Double
+}
+
+private struct RemoteReceiptLiveResponse: Decodable {
+    let id: String
+    let code: String
+    let createdAt: Double
+    let isActive: Bool?
+    let viewerParticipantKey: String?
+    let participants: [RemoteReceiptLiveParticipantResponse]
+    let items: [RemoteReceiptLiveItemResponse]
+}
+
+private struct RemoteClaimUpdateResponse: Decodable {
+    let appliedDelta: Double
+    let quantity: Double
+}
+
+private struct RemoteArchiveReceiptResponse: Decodable {
+    let archived: Bool
 }
 
 private struct RemoteUserResponse: Decodable {
@@ -395,12 +474,69 @@ final class ConvexService {
         return nil
     }
 
+    func joinReceipt(withCode receiptCode: String) async throws -> Receipt? {
+        let payload: RemoteReceiptResponse? = try await client.mutation(
+            "receipts:join",
+            with: [
+                "code": receiptCode,
+                "guestDeviceId": guestDeviceId
+            ]
+        )
+        guard let payload else { return nil }
+        return toLocalReceipt(payload)
+    }
+
+    func observeReceiptLive(receiptCode: String) -> AsyncThrowingStream<ReceiptLiveState?, Error> {
+        let stream = client.subscribe(
+            to: "receipts:live",
+            with: [
+                "code": receiptCode,
+                "guestDeviceId": guestDeviceId
+            ],
+            yielding: RemoteReceiptLiveResponse?.self
+        ).values
+
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    for try await payload in stream {
+                        if let payload {
+                            continuation.yield(self.toLocalReceiptLive(payload))
+                        } else {
+                            continuation.yield(nil)
+                        }
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+
+            continuation.onTermination = { _ in
+                task.cancel()
+            }
+        }
+    }
+
+    func updateClaim(receiptCode: String, itemKey: String, delta: Int) async throws {
+        let _: RemoteClaimUpdateResponse = try await client.mutation(
+            "receipts:updateClaim",
+            with: [
+                "code": receiptCode,
+                "itemKey": itemKey,
+                "delta": Double(delta),
+                "guestDeviceId": guestDeviceId
+            ]
+        )
+    }
+
     func fetchRecentReceipts(limit: Int = 20) async throws -> [Receipt] {
         let boundedLimit = max(1, min(limit, 100))
         let stream = client.subscribe(
             to: "receipts:listRecent",
             with: [
                 "limit": Double(boundedLimit),
+                "includeArchived": true,
                 "guestDeviceId": guestDeviceId
             ],
             yielding: [RemoteReceiptResponse].self
@@ -411,6 +547,18 @@ final class ConvexService {
         }
 
         return []
+    }
+
+    func archiveReceipt(clientReceiptId: String) async throws -> Bool {
+        let response: RemoteArchiveReceiptResponse = try await client.mutation(
+            "receipts:archive",
+            with: [
+                "clientReceiptId": clientReceiptId,
+                "guestDeviceId": guestDeviceId
+            ]
+        )
+
+        return response.archived
     }
 
     func migrateGuestDataToSignedInAccount() async throws -> Int {
@@ -513,7 +661,46 @@ final class ConvexService {
             id: UUID(uuidString: remote.clientReceiptId ?? "") ?? UUID(),
             date: Date(timeIntervalSince1970: remote.createdAt / 1000),
             items: items,
-            isActive: remote.isActive ?? true
+            isActive: remote.isActive ?? true,
+            canManageActions: remote.canManage ?? true,
+            shareCode: remote.code,
+            remoteID: remote.id
+        )
+    }
+
+    private func toLocalReceiptLive(_ remote: RemoteReceiptLiveResponse) -> ReceiptLiveState {
+        let viewerKey = remote.viewerParticipantKey
+
+        let participants = remote.participants.map { participant in
+            ReceiptLiveParticipant(
+                id: participant.participantKey,
+                name: participant.displayName,
+                joinedAt: Date(timeIntervalSince1970: participant.joinedAt / 1000),
+                isCurrentUser: participant.participantKey == viewerKey
+            )
+        }
+
+        let items = remote.items
+            .sorted { $0.sortOrder < $1.sortOrder }
+            .map { item in
+                ReceiptLiveItem(
+                    id: item.key,
+                    name: item.name,
+                    quantity: max(0, Int(item.quantity.rounded())),
+                    remainingQuantity: max(0, Int(item.remainingQuantity.rounded())),
+                    viewerClaimedQuantity: max(0, Int(item.viewerClaimedQuantity.rounded())),
+                    price: item.price
+                )
+            }
+
+        return ReceiptLiveState(
+            remoteId: remote.id,
+            code: remote.code,
+            createdAt: Date(timeIntervalSince1970: remote.createdAt / 1000),
+            isActive: remote.isActive ?? true,
+            viewerParticipantKey: viewerKey,
+            participants: participants,
+            items: items
         )
     }
 
