@@ -192,6 +192,7 @@
 				FB1849E4B1A947699D7D6E1C /* Frameworks */,
 				BC7373E219EF4784B60C2594 /* Resources */,
 				64CAD9E02F32C62500702557 /* Embed App Clips */,
+				64AABB0012345678DEADBEE1 /* Inject Dev Server Host */,
 			);
 			buildRules = (
 			);
@@ -286,6 +287,24 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		64AABB0012345678DEADBEE1 /* Inject Dev Server Host */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Inject Dev Server Host";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [ \"$CONFIGURATION\" = \"Debug\" ]; then\n    MAC_HOSTNAME=`scutil --get LocalHostName 2>/dev/null || hostname -s 2>/dev/null || echo \"\"`\n    if [ -n \"$MAC_HOSTNAME\" ]; then\n        PLIST=\"$BUILT_PRODUCTS_DIR/$INFOPLIST_PATH\"\n        /usr/libexec/PlistBuddy -c \"Delete :ReceiptProcessingURL\" \"$PLIST\" 2>/dev/null\n        /usr/libexec/PlistBuddy -c \"Add :ReceiptProcessingURL string http://$MAC_HOSTNAME.local:3000/process-receipt\" \"$PLIST\"\n        echo \"note: [Tabby] Injected ReceiptProcessingURL = http://$MAC_HOSTNAME.local:3000/process-receipt\"\n    fi\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		3030539ED21349A1888E45A3 /* Sources */ = {

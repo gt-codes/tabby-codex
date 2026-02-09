@@ -56,6 +56,14 @@ export const updateProfile = mutation({
   args: {
     name: v.optional(v.string()),
     preferredPaymentMethod: v.optional(v.string()),
+    absorbExtraCents: v.optional(v.boolean()),
+    venmoEnabled: v.optional(v.boolean()),
+    venmoUsername: v.optional(v.string()),
+    cashAppEnabled: v.optional(v.boolean()),
+    cashAppCashtag: v.optional(v.string()),
+    zelleEnabled: v.optional(v.boolean()),
+    zelleContact: v.optional(v.string()),
+    cashApplePayEnabled: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
@@ -72,6 +80,14 @@ export const updateProfile = mutation({
     const updates: {
       name?: string;
       preferredPaymentMethod?: string;
+      absorbExtraCents?: boolean;
+      venmoEnabled?: boolean;
+      venmoUsername?: string;
+      cashAppEnabled?: boolean;
+      cashAppCashtag?: string;
+      zelleEnabled?: boolean;
+      zelleContact?: string;
+      cashApplePayEnabled?: boolean;
       updatedAt: number;
       lastSeenAt: number;
     } = {
@@ -84,6 +100,30 @@ export const updateProfile = mutation({
     }
     if (args.preferredPaymentMethod !== undefined) {
       updates.preferredPaymentMethod = args.preferredPaymentMethod;
+    }
+    if (args.absorbExtraCents !== undefined) {
+      updates.absorbExtraCents = args.absorbExtraCents;
+    }
+    if (args.venmoEnabled !== undefined) {
+      updates.venmoEnabled = args.venmoEnabled;
+    }
+    if (args.venmoUsername !== undefined) {
+      updates.venmoUsername = args.venmoUsername;
+    }
+    if (args.cashAppEnabled !== undefined) {
+      updates.cashAppEnabled = args.cashAppEnabled;
+    }
+    if (args.cashAppCashtag !== undefined) {
+      updates.cashAppCashtag = args.cashAppCashtag;
+    }
+    if (args.zelleEnabled !== undefined) {
+      updates.zelleEnabled = args.zelleEnabled;
+    }
+    if (args.zelleContact !== undefined) {
+      updates.zelleContact = args.zelleContact;
+    }
+    if (args.cashApplePayEnabled !== undefined) {
+      updates.cashApplePayEnabled = args.cashApplePayEnabled;
     }
 
     if (existing) {
@@ -99,6 +139,14 @@ export const updateProfile = mutation({
       email: identity.email,
       pictureUrl: identity.pictureUrl,
       preferredPaymentMethod: args.preferredPaymentMethod,
+      absorbExtraCents: args.absorbExtraCents,
+      venmoEnabled: args.venmoEnabled,
+      venmoUsername: args.venmoUsername,
+      cashAppEnabled: args.cashAppEnabled,
+      cashAppCashtag: args.cashAppCashtag,
+      zelleEnabled: args.zelleEnabled,
+      zelleContact: args.zelleContact,
+      cashApplePayEnabled: args.cashApplePayEnabled,
       createdAt: now,
       updatedAt: now,
       lastSeenAt: now,

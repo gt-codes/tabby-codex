@@ -261,6 +261,9 @@ private struct ReceiptsView: View {
     @State private var draftItems: [ReceiptItem] = []
     @State private var draftReceiptImages: [UIImage] = []
     @State private var draftReceiptTotal: Double?
+    @State private var draftReceiptSubtotal: Double?
+    @State private var draftReceiptTax: Double?
+    @State private var draftReceiptGratuity: Double?
     @State private var draftReceiptMerchantName: String?
     @State private var photoPickerItems: [PhotosPickerItem] = []
     @State private var showPhotoPicker = false
@@ -272,6 +275,10 @@ private struct ReceiptsView: View {
     @State private var navigationPath: [ReceiptRoute] = []
     @State private var joinErrorMessage: String?
     @State private var isJoiningReceipt = false
+    @State private var showJoinNameSheet = false
+    @State private var pendingJoinReceipt: Receipt?
+    @State private var joinDisplayName = ""
+    @State private var showHostSignInSheet = false
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
@@ -312,6 +319,9 @@ private struct ReceiptsView: View {
                 draftItems = []
                 draftReceiptImages = []
                 draftReceiptTotal = nil
+                draftReceiptSubtotal = nil
+                draftReceiptTax = nil
+                draftReceiptGratuity = nil
                 draftReceiptMerchantName = nil
                 isProcessing = false
             }) {
@@ -320,7 +330,9 @@ private struct ReceiptsView: View {
                     receiptImages: draftReceiptImages,
                     scannedTotal: draftReceiptTotal,
                     merchantName: draftReceiptMerchantName,
-                    isProcessing: isProcessing
+                    isProcessing: isProcessing,
+                    tax: $draftReceiptTax,
+                    gratuity: $draftReceiptGratuity
                 ) { submittedItems in
                     submitReceipt(items: submittedItems)
                 }
@@ -344,6 +356,34 @@ private struct ReceiptsView: View {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(joinErrorMessage ?? "")
+            }
+            .sheet(isPresented: $showJoinNameSheet, onDismiss: {
+                if let receipt = pendingJoinReceipt {
+                    openReceipt(receipt)
+                    pendingJoinReceipt = nil
+                }
+            }) {
+                JoinNameInputSheet(
+                    displayName: $joinDisplayName,
+                    onContinue: { name in
+                        Task {
+                            if let receipt = pendingJoinReceipt, let code = receipt.shareCode, !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                try? await ConvexService.shared.updateParticipantDisplayName(
+                                    receiptCode: code,
+                                    displayName: name
+                                )
+                            }
+                            await MainActor.run {
+                                showJoinNameSheet = false
+                            }
+                        }
+                    },
+                    onSkip: {
+                        showJoinNameSheet = false
+                    }
+                )
+                .presentationDetents([.height(320)])
+                .presentationDragIndicator(.visible)
             }
             .navigationDestination(for: ReceiptRoute.self) { route in
                 if let receipt = receipts.first(where: { $0.id == route.receiptID }) {
@@ -416,6 +456,11 @@ private struct ReceiptsView: View {
             .onChange(of: permissionCenter.cameraStatus) { _ in
                 continuePendingScanIfPossible()
             }
+            .sheet(isPresented: $showHostSignInSheet) {
+                HostSignInSheet()
+                    .presentationDetents([.height(340)])
+                    .presentationDragIndicator(.visible)
+            }
         }
     }
 
@@ -487,6 +532,12 @@ private struct ReceiptsView: View {
                                     } label: {
                                         Label("Archive", systemImage: "archivebox")
                                     }
+                                } else if filter == .archived {
+                                    Button {
+                                        unarchiveReceipt(receipt)
+                                    } label: {
+                                        Label("Unarchive", systemImage: "arrow.uturn.backward")
+                                    }
                                 }
 
                                 Button(role: .destructive) {
@@ -528,33 +579,48 @@ private struct ReceiptsView: View {
     }
 
     private var receiptActionsMenu: some View {
-        Menu {
-            Button {
-                startScan()
-            } label: {
-                Label("Scan receipt", systemImage: "doc.text.viewfinder")
-            }
+        Group {
+            if isSignedIn {
+                Menu {
+                    Button {
+                        startScan()
+                    } label: {
+                        Label("Scan receipt", systemImage: "doc.text.viewfinder")
+                    }
 
-            Button {
-                showPhotoPicker = true
-            } label: {
-                Label("Upload receipt", systemImage: "photo.on.rectangle")
+                    Button {
+                        showPhotoPicker = true
+                    } label: {
+                        Label("Upload receipt", systemImage: "photo.on.rectangle")
+                    }
+                } label: {
+                    receiptActionIcon
+                }
+                .buttonStyle(.plain)
+            } else {
+                Button {
+                    showHostSignInSheet = true
+                } label: {
+                    receiptActionIcon
+                }
+                .buttonStyle(.plain)
             }
-        } label: {
-            Image(systemName: "doc.viewfinder")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(Color(uiColor: .label))
-                .frame(width: headerControlSize, height: headerControlSize)
-                .background(
-                    Circle()
-                        .fill(Color(uiColor: .secondarySystemBackground))
-                        .overlay(
-                            Circle()
-                                .stroke(Color(uiColor: .separator).opacity(0.28), lineWidth: 1)
-                        )
-                )
         }
-        .buttonStyle(.plain)
+    }
+
+    private var receiptActionIcon: some View {
+        Image(systemName: "doc.viewfinder")
+            .font(.system(size: 16, weight: .semibold))
+            .foregroundStyle(Color(uiColor: .label))
+            .frame(width: headerControlSize, height: headerControlSize)
+            .background(
+                Circle()
+                    .fill(Color(uiColor: .secondarySystemBackground))
+                    .overlay(
+                        Circle()
+                            .stroke(Color(uiColor: .separator).opacity(0.28), lineWidth: 1)
+                    )
+            )
     }
 
     @ViewBuilder
@@ -563,12 +629,21 @@ private struct ReceiptsView: View {
             Spacer(minLength: 0)
             switch filter {
             case .active:
-                EmptyStateView(
-                    title: "No active receipt",
-                    detail: "Scan a receipt to start splitting.",
-                    icon: "doc.text.viewfinder",
-                    tint: TabbyColor.accent
-                )
+                if isSignedIn {
+                    EmptyStateView(
+                        title: "No active receipt",
+                        detail: "Scan a receipt to start splitting.",
+                        icon: "doc.text.viewfinder",
+                        tint: TabbyColor.accent
+                    )
+                } else {
+                    EmptyStateView(
+                        title: "Sign in to host receipts",
+                        detail: "Create and manage receipt splits. Joined receipts will also show up here.",
+                        icon: "person.crop.circle.badge.plus",
+                        tint: TabbyColor.accent
+                    )
+                }
             case .archived:
                 EmptyStateView(
                     title: "No archived receipts",
@@ -634,6 +709,9 @@ private struct ReceiptsView: View {
         draftItems = []
         draftReceiptImages = images
         draftReceiptTotal = nil
+        draftReceiptSubtotal = nil
+        draftReceiptTax = nil
+        draftReceiptGratuity = nil
         draftReceiptMerchantName = nil
         isProcessing = true
         showItemsSheet = true
@@ -644,6 +722,9 @@ private struct ReceiptsView: View {
             await MainActor.run {
                 draftItems = extraction.items
                 draftReceiptTotal = extraction.receiptTotal
+                draftReceiptSubtotal = extraction.subtotal
+                draftReceiptTax = extraction.tax
+                draftReceiptGratuity = extraction.gratuity
                 draftReceiptMerchantName = extraction.merchantName
                 isProcessing = false
             }
@@ -652,13 +733,22 @@ private struct ReceiptsView: View {
 
     private func submitReceipt(items: [ReceiptItem]) {
         guard !items.isEmpty else { return }
-        let newReceipt = Receipt(items: items, scannedTotal: draftReceiptTotal)
+        let newReceipt = Receipt(
+            items: items,
+            scannedTotal: draftReceiptTotal,
+            scannedSubtotal: draftReceiptSubtotal,
+            scannedTax: draftReceiptTax,
+            scannedGratuity: draftReceiptGratuity
+        )
         withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
             receipts = mergeReceipts(local: receipts, remote: [newReceipt])
         }
         draftItems = []
         draftReceiptImages = []
         draftReceiptTotal = nil
+        draftReceiptSubtotal = nil
+        draftReceiptTax = nil
+        draftReceiptGratuity = nil
         draftReceiptMerchantName = nil
         showItemsSheet = false
         activeShareReceipt = newReceipt
@@ -690,7 +780,22 @@ private struct ReceiptsView: View {
         }
 
         Task {
-            await archiveReceiptRemotelyIfNeeded(receipt)
+            await destroyReceiptRemotely(receipt)
+        }
+    }
+
+    private func unarchiveReceipt(_ receipt: Receipt) {
+        guard receipt.canManageActions else { return }
+        guard let index = receiptIndex(for: receipt), !receipts[index].isActive else {
+            return
+        }
+
+        withAnimation(.easeInOut(duration: 0.22)) {
+            receipts[index].isActive = true
+        }
+
+        Task {
+            await unarchiveReceiptRemotely(receipt)
         }
     }
 
@@ -736,7 +841,10 @@ private struct ReceiptsView: View {
                 ($0.remoteID != nil && $0.remoteID == joinedReceipt.remoteID) ||
                 ($0.shareCode != nil && $0.shareCode == joinedReceipt.shareCode)
             }) ?? joinedReceipt
-            openReceipt(destinationReceipt)
+
+            pendingJoinReceipt = destinationReceipt
+            joinDisplayName = ""
+            showJoinNameSheet = true
         } catch {
             joinErrorMessage = error.localizedDescription
         }
@@ -756,6 +864,28 @@ private struct ReceiptsView: View {
             _ = try await ConvexService.shared.archiveReceipt(clientReceiptId: receipt.id.uuidString)
         } catch {
             print("[Tabby] Failed to archive receipt \(receipt.id): \(error)")
+        }
+    }
+
+    @MainActor
+    private func unarchiveReceiptRemotely(_ receipt: Receipt) async {
+        guard shouldSyncReceiptAction(receipt) else { return }
+
+        do {
+            _ = try await ConvexService.shared.unarchiveReceipt(clientReceiptId: receipt.id.uuidString)
+        } catch {
+            print("[Tabby] Failed to unarchive receipt \(receipt.id): \(error)")
+        }
+    }
+
+    @MainActor
+    private func destroyReceiptRemotely(_ receipt: Receipt) async {
+        guard shouldSyncReceiptAction(receipt) else { return }
+
+        do {
+            _ = try await ConvexService.shared.destroyReceipt(clientReceiptId: receipt.id.uuidString)
+        } catch {
+            print("[Tabby] Failed to destroy receipt \(receipt.id): \(error)")
         }
     }
 
@@ -868,6 +998,11 @@ private struct ReceiptsView: View {
             isActive: incoming.isActive,
             canManageActions: incoming.canManageActions,
             scannedTotal: incoming.scannedTotal ?? existing.scannedTotal,
+            scannedSubtotal: incoming.scannedSubtotal ?? existing.scannedSubtotal,
+            scannedTax: incoming.scannedTax ?? existing.scannedTax,
+            scannedGratuity: incoming.scannedGratuity ?? existing.scannedGratuity,
+            settlementPhase: incoming.settlementPhase,
+            archivedReason: incoming.archivedReason ?? existing.archivedReason,
             shareCode: incoming.shareCode ?? existing.shareCode,
             remoteID: incoming.remoteID ?? existing.remoteID
         )
@@ -966,6 +1101,209 @@ private struct CameraPermissionSheet: View {
                 endPoint: .bottom
             )
         )
+    }
+}
+
+private struct HostSignInSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage("isSignedIn") private var isSignedIn = ConvexService.shared.hasCachedSession
+    @State private var isBusy = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        VStack(spacing: 16) {
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(TabbyColor.ink.opacity(0.18))
+                .frame(width: 36, height: 4)
+                .padding(.top, 8)
+
+            ZStack {
+                Circle()
+                    .fill(TabbyColor.accent.opacity(0.16))
+                    .frame(width: 64, height: 64)
+                Image(systemName: "doc.text.viewfinder")
+                    .font(.system(size: 26, weight: .semibold))
+                    .foregroundStyle(TabbyColor.accent)
+            }
+
+            VStack(spacing: 6) {
+                Text("Sign in to host")
+                    .font(TabbyType.title)
+                    .foregroundStyle(TabbyColor.ink)
+                Text("Hosting a receipt requires an account so your receipts, payment info, and history stay safe across devices.")
+                    .font(TabbyType.body)
+                    .foregroundStyle(TabbyColor.ink.opacity(0.68))
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(2)
+            }
+            .padding(.horizontal, 8)
+
+            VStack(spacing: 8) {
+                Button {
+                    signIn()
+                } label: {
+                    HStack(spacing: 8) {
+                        if isBusy {
+                            ProgressView()
+                                .tint(TabbyColor.canvas)
+                        } else {
+                            Image(systemName: "apple.logo")
+                        }
+                        Text(isBusy ? "Signing in..." : "Sign in with Apple")
+                    }
+                    .font(TabbyType.bodyBold)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 13)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(TabbyColor.ink)
+                    )
+                    .foregroundStyle(TabbyColor.canvas)
+                }
+                .buttonStyle(.plain)
+                .disabled(isBusy)
+
+                Button("Not now") {
+                    dismiss()
+                }
+                .font(TabbyType.caption)
+                .foregroundStyle(TabbyColor.ink.opacity(0.55))
+            }
+            .padding(.top, 2)
+
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(TabbyType.caption)
+                    .foregroundStyle(Color.red.opacity(0.9))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 8)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 14)
+        .background(
+            LinearGradient(
+                colors: [TabbyColor.canvas, TabbyColor.canvasAccent],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
+    }
+
+    private func signIn() {
+        errorMessage = nil
+        isBusy = true
+        Task {
+            do {
+                _ = try await ConvexService.shared.signInWithApple()
+                let _ = try await ConvexService.shared.migrateGuestDataToSignedInAccount()
+                await MainActor.run {
+                    isBusy = false
+                    dismiss()
+                }
+            } catch {
+                await MainActor.run {
+                    errorMessage = "Sign in failed. Please try again."
+                    isBusy = false
+                }
+            }
+        }
+    }
+}
+
+private struct JoinNameInputSheet: View {
+    @Binding var displayName: String
+    var onContinue: (String) -> Void
+    var onSkip: () -> Void
+
+    @FocusState private var isNameFocused: Bool
+
+    var body: some View {
+        VStack(spacing: 16) {
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(TabbyColor.ink.opacity(0.18))
+                .frame(width: 36, height: 4)
+                .padding(.top, 8)
+
+            ZStack {
+                Circle()
+                    .fill(TabbyColor.mint.opacity(0.16))
+                    .frame(width: 64, height: 64)
+                Image(systemName: "person.crop.circle.badge.plus")
+                    .font(.system(size: 26, weight: .semibold))
+                    .foregroundStyle(TabbyColor.mint)
+            }
+
+            VStack(spacing: 6) {
+                Text("You're in!")
+                    .font(TabbyType.title)
+                    .foregroundStyle(TabbyColor.ink)
+                Text("Add your name so everyone knows who you are.")
+                    .font(TabbyType.body)
+                    .foregroundStyle(TabbyColor.ink.opacity(0.68))
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(2)
+            }
+            .padding(.horizontal, 8)
+
+            TextField("Your name", text: $displayName)
+                .font(TabbyType.body)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(TabbyColor.ink.opacity(0.05))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(TabbyColor.subtle, lineWidth: 1)
+                        )
+                )
+                .focused($isNameFocused)
+                .submitLabel(.done)
+                .onSubmit {
+                    onContinue(displayName)
+                }
+
+            VStack(spacing: 8) {
+                Button {
+                    onContinue(displayName)
+                } label: {
+                    Text("Continue")
+                        .font(TabbyType.bodyBold)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 13)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(TabbyColor.ink)
+                        )
+                        .foregroundStyle(TabbyColor.canvas)
+                }
+                .buttonStyle(.plain)
+
+                Button("Skip for now") {
+                    onSkip()
+                }
+                .font(TabbyType.caption)
+                .foregroundStyle(TabbyColor.ink.opacity(0.55))
+            }
+            .padding(.top, 2)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 14)
+        .background(
+            LinearGradient(
+                colors: [TabbyColor.canvas, TabbyColor.canvasAccent],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
+        .onAppear {
+            isNameFocused = true
+        }
     }
 }
 
@@ -1110,43 +1448,82 @@ private enum AppThemeOption: String, CaseIterable, Identifiable {
 }
 
 private enum PreferredPaymentMethod: String, CaseIterable, Identifiable {
-    case appleCash = "apple_cash"
     case venmo = "venmo"
     case cashApp = "cash_app"
     case zelle = "zelle"
+    case cashApplePay = "cash_apple_pay"
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .appleCash:
-            return "Apple Cash"
         case .venmo:
             return "Venmo"
         case .cashApp:
             return "Cash App"
         case .zelle:
             return "Zelle"
+        case .cashApplePay:
+            return "Cash / Apple Pay"
         }
     }
 
     var symbol: String {
         switch self {
-        case .appleCash:
-            return "apple.logo"
         case .venmo:
             return "v.circle.fill"
         case .cashApp:
             return "c.square.fill"
         case .zelle:
             return "z.square.fill"
+        case .cashApplePay:
+            return "wallet.pass"
+        }
+    }
+
+    var brandColor: Color {
+        switch self {
+        case .venmo:
+            return Color(red: 0.0, green: 0.53, blue: 0.87)
+        case .cashApp:
+            return Color(red: 0.0, green: 0.78, blue: 0.33)
+        case .zelle:
+            return Color(red: 0.42, green: 0.09, blue: 0.73)
+        case .cashApplePay:
+            return Color(.systemGray)
+        }
+    }
+
+    var inputLabel: String {
+        switch self {
+        case .venmo: return "Username"
+        case .cashApp: return "Cashtag"
+        case .zelle: return "Contact"
+        case .cashApplePay: return ""
+        }
+    }
+
+    var inputPlaceholder: String {
+        switch self {
+        case .venmo: return "@username"
+        case .cashApp: return "$cashtag"
+        case .zelle: return "phone or email"
+        case .cashApplePay: return ""
         }
     }
 }
 
 private struct ProfileView: View {
     @AppStorage("profileDisplayName") private var displayName = ""
-    @AppStorage("profilePreferredPaymentMethod") private var preferredPaymentMethodRaw = PreferredPaymentMethod.appleCash.rawValue
+    @AppStorage("profilePreferredPaymentMethod") private var preferredPaymentMethodRaw = PreferredPaymentMethod.cashApplePay.rawValue
+    @AppStorage("profileAbsorbExtraCents") private var absorbExtraCents = false
+    @AppStorage("profileVenmoEnabled") private var venmoEnabled = false
+    @AppStorage("profileVenmoUsername") private var venmoUsername = ""
+    @AppStorage("profileCashAppEnabled") private var cashAppEnabled = false
+    @AppStorage("profileCashAppCashtag") private var cashAppCashtag = ""
+    @AppStorage("profileZelleEnabled") private var zelleEnabled = false
+    @AppStorage("profileZelleContact") private var zelleContact = ""
+    @AppStorage("profileCashApplePayEnabled") private var cashApplePayEnabled = true
     @AppStorage("appTheme") private var appThemeRaw = AppThemeOption.auto.rawValue
     @AppStorage("useLocationForReceiptCapture") private var useLocationForReceiptCapture = true
     @AppStorage("isSignedIn") private var isSignedIn = ConvexService.shared.hasCachedSession
@@ -1222,14 +1599,21 @@ private struct ProfileView: View {
             }
 
             NavigationLink {
-                PaymentAndShippingView(
+                PaymentOptionsView(
                     preferredPaymentMethodRaw: $preferredPaymentMethodRaw,
-                    onSavePreferredPaymentMethod: {
-                        Task { await savePreferredPaymentMethod() }
+                    absorbExtraCents: $absorbExtraCents,
+                    venmoEnabled: $venmoEnabled,
+                    venmoUsername: $venmoUsername,
+                    cashAppEnabled: $cashAppEnabled,
+                    cashAppCashtag: $cashAppCashtag,
+                    zelleEnabled: $zelleEnabled,
+                    zelleContact: $zelleContact,
+                    onSave: {
+                        Task { await savePaymentOptions() }
                     }
                 )
             } label: {
-                settingsRow(title: "Payment & Shipping", systemImage: "creditcard")
+                settingsRow(title: "Payment options", systemImage: "creditcard")
             }
         }
     }
@@ -1338,9 +1722,20 @@ private struct ProfileView: View {
                        PreferredPaymentMethod(rawValue: remotePayment) != nil {
                         preferredPaymentMethodRaw = remotePayment
                     }
+                    absorbExtraCents = profile.absorbExtraCents
+                    venmoEnabled = profile.venmoEnabled
+                    venmoUsername = profile.venmoUsername ?? ""
+                    cashAppEnabled = profile.cashAppEnabled
+                    cashAppCashtag = profile.cashAppCashtag ?? ""
+                    zelleEnabled = profile.zelleEnabled
+                    zelleContact = profile.zelleContact ?? ""
+                    cashApplePayEnabled = profile.cashApplePayEnabled
                 } else {
                     accountEmail = nil
                     lastSyncedDisplayName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                if PreferredPaymentMethod(rawValue: preferredPaymentMethodRaw) == nil {
+                    preferredPaymentMethodRaw = PreferredPaymentMethod.cashApplePay.rawValue
                 }
                 errorMessage = nil
             }
@@ -1371,19 +1766,67 @@ private struct ProfileView: View {
         }
     }
 
-    private func savePreferredPaymentMethod() async {
+    private func savePaymentOptions() async {
         guard isSignedIn else { return }
+        let normalizedVenmo = venmoUsername.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedCashApp = cashAppCashtag
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "$"))
+        let normalizedZelle = zelleContact.trimmingCharacters(in: .whitespacesAndNewlines)
+        let activeMethods = availablePreferredMethods(
+            venmoEnabled: venmoEnabled,
+            venmoUsername: normalizedVenmo,
+            cashAppEnabled: cashAppEnabled,
+            cashAppCashtag: normalizedCashApp,
+            zelleEnabled: zelleEnabled,
+            zelleContact: normalizedZelle,
+            cashApplePayEnabled: true
+        )
+        if !activeMethods.contains(where: { $0.rawValue == preferredPaymentMethodRaw }) {
+            preferredPaymentMethodRaw = activeMethods.first?.rawValue ?? PreferredPaymentMethod.cashApplePay.rawValue
+        }
+
         do {
             try await ConvexService.shared.updateMyProfile(
                 name: nil,
-                preferredPaymentMethod: preferredPaymentMethodRaw
+                preferredPaymentMethod: preferredPaymentMethodRaw,
+                absorbExtraCents: absorbExtraCents,
+                venmoEnabled: venmoEnabled,
+                venmoUsername: normalizedVenmo.isEmpty ? nil : normalizedVenmo,
+                cashAppEnabled: cashAppEnabled,
+                cashAppCashtag: normalizedCashApp.isEmpty ? nil : normalizedCashApp,
+                zelleEnabled: zelleEnabled,
+                zelleContact: normalizedZelle.isEmpty ? nil : normalizedZelle,
+                cashApplePayEnabled: true
             )
             await MainActor.run { errorMessage = nil }
         } catch {
             await MainActor.run {
-                errorMessage = "Couldn't save preferred payment method."
+                errorMessage = "Couldn't save payment options."
             }
         }
+    }
+
+    private func availablePreferredMethods(
+        venmoEnabled: Bool,
+        venmoUsername: String,
+        cashAppEnabled: Bool,
+        cashAppCashtag: String,
+        zelleEnabled: Bool,
+        zelleContact: String,
+        cashApplePayEnabled: Bool
+    ) -> [PreferredPaymentMethod] {
+        var methods: [PreferredPaymentMethod] = [.cashApplePay]
+        if venmoEnabled, !venmoUsername.isEmpty {
+            methods.append(.venmo)
+        }
+        if cashAppEnabled, !cashAppCashtag.isEmpty {
+            methods.append(.cashApp)
+        }
+        if zelleEnabled, !zelleContact.isEmpty {
+            methods.append(.zelle)
+        }
+        return methods
     }
 
     private func uploadProfilePhotoIfNeeded(imageData: Data) async {
@@ -1510,43 +1953,127 @@ private struct PersonalInfoView: View {
     }
 }
 
-private struct PaymentAndShippingView: View {
+private struct PaymentOptionsView: View {
     @Binding var preferredPaymentMethodRaw: String
-    let onSavePreferredPaymentMethod: () -> Void
+    @Binding var absorbExtraCents: Bool
+    @Binding var venmoEnabled: Bool
+    @Binding var venmoUsername: String
+    @Binding var cashAppEnabled: Bool
+    @Binding var cashAppCashtag: String
+    @Binding var zelleEnabled: Bool
+    @Binding var zelleContact: String
+    let onSave: () -> Void
 
-    private var selectedMethod: PreferredPaymentMethod {
-        PreferredPaymentMethod(rawValue: preferredPaymentMethodRaw) ?? .appleCash
+    private var availableMethods: [PreferredPaymentMethod] {
+        var methods: [PreferredPaymentMethod] = [.cashApplePay]
+        if venmoEnabled, !venmoUsername.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            methods.append(.venmo)
+        }
+        if cashAppEnabled, !cashAppCashtag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            methods.append(.cashApp)
+        }
+        if zelleEnabled, !zelleContact.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            methods.append(.zelle)
+        }
+        return methods
     }
 
     var body: some View {
         Form {
             Section {
-                ForEach(PreferredPaymentMethod.allCases) { method in
-                    Button {
-                        guard preferredPaymentMethodRaw != method.rawValue else { return }
-                        preferredPaymentMethodRaw = method.rawValue
-                        onSavePreferredPaymentMethod()
-                    } label: {
-                        HStack {
-                            Text(method.title)
-                                .foregroundStyle(.primary)
-                            Spacer()
-                            if method == selectedMethod {
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(.blue)
-                            }
-                        }
+                Picker("Preferred", selection: $preferredPaymentMethodRaw) {
+                    ForEach(availableMethods) { method in
+                        Text(method.title).tag(method.rawValue)
                     }
-                    .buttonStyle(.plain)
                 }
             } header: {
                 Text("Preferred Payment")
             } footer: {
                 Text("This is your default suggestion when settling up.")
             }
+
+            Section {
+                paymentToggleRow(.venmo, isOn: $venmoEnabled)
+                if venmoEnabled {
+                    paymentInputRow(.venmo, text: $venmoUsername)
+                }
+
+                paymentToggleRow(.cashApp, isOn: $cashAppEnabled)
+                if cashAppEnabled {
+                    paymentInputRow(.cashApp, text: $cashAppCashtag)
+                }
+
+                paymentToggleRow(.zelle, isOn: $zelleEnabled)
+                if zelleEnabled {
+                    paymentInputRow(.zelle, text: $zelleContact)
+                }
+            } header: {
+                Text("Active options")
+            } footer: {
+                Text("Enable the methods guests can use to pay you. Cash and Apple Pay are always available as a fallback.")
+            }
+
+            Section {
+                Toggle("Absorb extra cents", isOn: $absorbExtraCents)
+                    .tint(TabbyColor.mint)
+            } footer: {
+                Text("If enabled, rounding cents are added to your portion. Otherwise the guest with the largest split gets the extra cent.")
+            }
         }
-        .navigationTitle("Payment & Shipping")
+        .navigationTitle("Payment options")
         .navigationBarTitleDisplayMode(.inline)
+        .onChange(of: preferredPaymentMethodRaw) { _ in onSave() }
+        .onChange(of: venmoEnabled) { _ in onSave() }
+        .onChange(of: cashAppEnabled) { _ in onSave() }
+        .onChange(of: zelleEnabled) { _ in onSave() }
+        .onChange(of: absorbExtraCents) { _ in onSave() }
+        .onChange(of: venmoUsername) { _ in onSave() }
+        .onChange(of: cashAppCashtag) { _ in onSave() }
+        .onChange(of: zelleContact) { _ in onSave() }
+        .onDisappear(perform: onSave)
+    }
+
+    // MARK: - Payment Method Row Builders
+
+    @ViewBuilder
+    private func paymentToggleRow(
+        _ method: PreferredPaymentMethod,
+        isOn: Binding<Bool>
+    ) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: method.symbol)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.white)
+                .frame(width: 29, height: 29)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(isOn.wrappedValue ? method.brandColor : Color(.systemGray3))
+                )
+                .animation(.easeInOut(duration: 0.2), value: isOn.wrappedValue)
+            Toggle(method.title, isOn: isOn.animation(.spring(response: 0.35, dampingFraction: 0.8)))
+                .tint(TabbyColor.mint)
+        }
+    }
+
+    @ViewBuilder
+    private func paymentInputRow(
+        _ method: PreferredPaymentMethod,
+        text: Binding<String>
+    ) -> some View {
+        HStack {
+            Text(method.inputLabel)
+                .foregroundStyle(.secondary)
+                .font(.subheadline)
+            Spacer()
+            TextField(method.inputPlaceholder, text: text)
+                .multilineTextAlignment(.trailing)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+        }
+        .padding(.leading, 43)
+        .transition(.opacity.combined(with: .move(edge: .top)))
     }
 }
 
@@ -1626,8 +2153,16 @@ private struct ItemsSheetView: View {
     let scannedTotal: Double?
     let merchantName: String?
     let isProcessing: Bool
+    @Binding var tax: Double?
+    @Binding var gratuity: Double?
     var onSubmit: ([ReceiptItem]) -> Void
     @State private var quantityPickerIndex: Int?
+    @State private var isFeeSectionExpanded = false
+    @State private var editingFeeField: FeeField?
+
+    private enum FeeField: Hashable {
+        case tax, gratuity
+    }
     @State private var pricePickerIndex: Int?
     @State private var isBulkSelectionEnabled = false
     @State private var selectedItemIDs: Set<UUID> = []
@@ -1709,6 +2244,10 @@ private struct ItemsSheetView: View {
                     if !isProcessing && !isBulkSelectionEnabled {
                         addItemButton
                     }
+
+                    if !isProcessing && !items.isEmpty {
+                        feesSection
+                    }
                 }
                 .padding(24)
                 .padding(.bottom, 12)
@@ -1773,6 +2312,24 @@ private struct ItemsSheetView: View {
                 }
                 .presentationDetents([.height(360)])
             }
+            .sheet(isPresented: Binding(
+                get: { editingFeeField != nil },
+                set: { if !$0 { editingFeeField = nil } }
+            )) {
+                if let field = editingFeeField {
+                    FeeEditorView(
+                        label: field == .tax ? "Tax" : "Gratuity",
+                        value: Binding(
+                            get: { field == .tax ? tax : gratuity },
+                            set: { newVal in
+                                if field == .tax { tax = newVal }
+                                else { gratuity = newVal }
+                            }
+                        )
+                    )
+                    .presentationDetents([.height(240)])
+                }
+            }
             .onChange(of: items) { updatedItems in
                 let validIDs = Set(updatedItems.map(\.id))
                 selectedItemIDs = selectedItemIDs.intersection(validIDs)
@@ -1782,6 +2339,13 @@ private struct ItemsSheetView: View {
             }
             .onDisappear {
                 undoDismissTask?.cancel()
+            }
+            .onChange(of: isProcessing) { processing in
+                if !processing && hasFees {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                        isFeeSectionExpanded = true
+                    }
+                }
             }
         }
     }
@@ -1869,6 +2433,145 @@ private struct ItemsSheetView: View {
             )
         }
         .buttonStyle(.plain)
+    }
+
+    private var otherFees: Double {
+        let knownFees = (tax ?? 0) + (gratuity ?? 0)
+        let total = scannedTotal ?? 0
+        let remaining = total - itemsTotal - knownFees
+        return remaining > 0.005 ? remaining : 0
+    }
+
+    private var hasFees: Bool {
+        (tax ?? 0) > 0 || (gratuity ?? 0) > 0 || otherFees > 0.005
+    }
+
+    @ViewBuilder
+    private var feesSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                    isFeeSectionExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "dollarsign.circle")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(TabbyColor.ink.opacity(0.55))
+                    Text("Taxes & fees")
+                        .font(TabbyType.bodyBold)
+                        .foregroundStyle(TabbyColor.ink)
+                    if !isFeeSectionExpanded && hasFees {
+                        Text("•")
+                            .font(TabbyType.caption)
+                            .foregroundStyle(TabbyColor.ink.opacity(0.35))
+                        Text(feesSummaryText)
+                            .font(TabbyType.caption)
+                            .foregroundStyle(TabbyColor.ink.opacity(0.55))
+                            .lineLimit(1)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(TabbyColor.ink.opacity(0.4))
+                        .rotationEffect(.degrees(isFeeSectionExpanded ? 90 : 0))
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 12)
+            }
+            .buttonStyle(.plain)
+
+            if isFeeSectionExpanded {
+                VStack(spacing: 0) {
+                    Divider().overlay(TabbyColor.subtle.opacity(0.7))
+
+                    feeEditRow(
+                        label: "Tax",
+                        value: tax,
+                        field: .tax,
+                        onChange: { tax = $0 }
+                    )
+
+                    Divider().overlay(TabbyColor.subtle.opacity(0.5)).padding(.horizontal, 12)
+
+                    feeEditRow(
+                        label: "Gratuity",
+                        value: gratuity,
+                        field: .gratuity,
+                        onChange: { gratuity = $0 }
+                    )
+
+                    if otherFees > 0.005 {
+                        Divider().overlay(TabbyColor.subtle.opacity(0.5)).padding(.horizontal, 12)
+                        HStack {
+                            Text("Other fees")
+                                .font(TabbyType.caption)
+                                .foregroundStyle(TabbyColor.ink.opacity(0.56))
+                            Spacer()
+                            Text(currencyText(otherFees))
+                                .font(TabbyType.caption)
+                                .monospacedDigit()
+                                .foregroundStyle(TabbyColor.ink.opacity(0.62))
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                    }
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(TabbyColor.ink.opacity(0.04))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(TabbyColor.subtle, lineWidth: 1)
+                )
+        )
+    }
+
+    private func feeEditRow(
+        label: String,
+        value: Double?,
+        field: FeeField,
+        onChange: @escaping (Double?) -> Void
+    ) -> some View {
+        HStack {
+            Text(label)
+                .font(TabbyType.body)
+                .foregroundStyle(TabbyColor.ink)
+            Spacer()
+            Button {
+                editingFeeField = field
+            } label: {
+                HStack(spacing: 4) {
+                    if let value, value > 0 {
+                        Text(currencyText(value))
+                            .font(TabbyType.bodyBold)
+                            .monospacedDigit()
+                            .foregroundStyle(TabbyColor.ink)
+                    } else {
+                        Text("—")
+                            .font(TabbyType.body)
+                            .foregroundStyle(TabbyColor.ink.opacity(0.35))
+                    }
+                    Image(systemName: "pencil")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(TabbyColor.ink.opacity(0.4))
+                }
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+    }
+
+    private var feesSummaryText: String {
+        var parts: [String] = []
+        if let t = tax, t > 0 { parts.append("tax \(currencyText(t))") }
+        if let g = gratuity, g > 0 { parts.append("tip \(currencyText(g))") }
+        if otherFees > 0.005 { parts.append("other \(currencyText(otherFees))") }
+        return parts.joined(separator: ", ")
     }
 
     private var displayedTotal: Double? {
@@ -2515,6 +3218,72 @@ private struct PriceEditorView: View {
     }
 }
 
+private struct FeeEditorView: View {
+    let label: String
+    @Binding var value: Double?
+    @Environment(\.dismiss) private var dismiss
+    @State private var text: String = ""
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 16) {
+                VStack(spacing: 6) {
+                    Text(label)
+                        .font(TabbyType.bodyBold)
+                        .foregroundStyle(TabbyColor.ink)
+                    Text("Enter the \(label.lowercased()) amount from the receipt.")
+                        .font(TabbyType.caption)
+                        .foregroundStyle(TabbyColor.ink.opacity(0.6))
+                }
+
+                TextField("$0.00", text: $text)
+                    .font(TabbyType.title)
+                    .multilineTextAlignment(.center)
+                    .keyboardType(.decimalPad)
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(TabbyColor.canvasAccent)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .stroke(TabbyColor.subtle, lineWidth: 1)
+                            )
+                    )
+
+                Button("Clear") {
+                    value = nil
+                    dismiss()
+                }
+                .font(TabbyType.caption)
+                .foregroundStyle(TabbyColor.ink.opacity(0.6))
+            }
+            .padding(20)
+            .onAppear {
+                if let value, value > 0 {
+                    text = String(format: "%.2f", value)
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") {
+                        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if trimmed.isEmpty {
+                            value = nil
+                        } else {
+                            let normalized = trimmed.replacingOccurrences(of: ",", with: ".")
+                            if let parsed = Double(normalized), parsed >= 0 {
+                                value = parsed > 0 ? parsed : nil
+                            }
+                        }
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
 private struct AddItemSheetView: View {
     let onAdd: (ReceiptItem) -> Void
     @Environment(\.dismiss) private var dismiss
@@ -2807,6 +3576,11 @@ private struct ReceiptSummaryCard: View {
                     .font(TabbyType.label)
                     .textCase(.uppercase)
                     .foregroundStyle(TabbyColor.ink.opacity(0.7))
+                if receipt.isActive && receipt.settlementPhase != "finalized" {
+                    LiveClaimBadge()
+                } else if !receipt.isActive {
+                    ArchiveReasonBadge(reason: receipt.archivedReason)
+                }
                 Spacer()
                 Text(receipt.date.formatted(date: .abbreviated, time: .shortened))
                     .font(TabbyType.caption)
@@ -2830,7 +3604,7 @@ private struct ReceiptSummaryCard: View {
                     .foregroundStyle(TabbyColor.ink.opacity(0.6))
             }
 
-            if showsShareHint {
+            if showsShareHint, receipt.isActive {
                 HStack(spacing: 6) {
                     Image(systemName: "list.bullet.rectangle.portrait")
                     Text("Tap to open live claims")
@@ -2862,6 +3636,60 @@ private struct ReceiptSummaryCard: View {
         .background(
             ReceiptPaperCard()
         )
+    }
+}
+
+private struct LiveClaimBadge: View {
+    @State private var pulse = false
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(TabbyColor.mint)
+                .frame(width: 7, height: 7)
+                .opacity(pulse ? 0.42 : 1)
+                .scaleEffect(pulse ? 1.3 : 0.9)
+                .animation(.easeInOut(duration: 0.95).repeatForever(autoreverses: true), value: pulse)
+            Text("Live")
+                .font(TabbyType.caption)
+                .foregroundStyle(TabbyColor.ink.opacity(0.72))
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            Capsule(style: .continuous)
+                .fill(TabbyColor.mint.opacity(0.16))
+        )
+        .onAppear {
+            pulse = true
+        }
+    }
+}
+
+private struct ArchiveReasonBadge: View {
+    let reason: String?
+
+    var title: String {
+        if reason == "auto_settled" {
+            return "Settled"
+        }
+        return "Archived"
+    }
+
+    var tint: Color {
+        reason == "auto_settled" ? TabbyColor.mint : TabbyColor.subtle
+    }
+
+    var body: some View {
+        Text(title)
+            .font(TabbyType.caption)
+            .foregroundStyle(TabbyColor.ink.opacity(0.7))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(tint.opacity(0.16))
+            )
     }
 }
 
@@ -2934,6 +3762,11 @@ struct Receipt: Identifiable, Hashable, Codable {
     var isActive: Bool
     var canManageActions: Bool
     var scannedTotal: Double?
+    var scannedSubtotal: Double?
+    var scannedTax: Double?
+    var scannedGratuity: Double?
+    var settlementPhase: String
+    var archivedReason: String?
     var shareCode: String?
     var remoteID: String?
 
@@ -2944,6 +3777,11 @@ struct Receipt: Identifiable, Hashable, Codable {
         isActive: Bool = true,
         canManageActions: Bool = true,
         scannedTotal: Double? = nil,
+        scannedSubtotal: Double? = nil,
+        scannedTax: Double? = nil,
+        scannedGratuity: Double? = nil,
+        settlementPhase: String = "claiming",
+        archivedReason: String? = nil,
         shareCode: String? = nil,
         remoteID: String? = nil
     ) {
@@ -2953,6 +3791,11 @@ struct Receipt: Identifiable, Hashable, Codable {
         self.isActive = isActive
         self.canManageActions = canManageActions
         self.scannedTotal = scannedTotal
+        self.scannedSubtotal = scannedSubtotal
+        self.scannedTax = scannedTax
+        self.scannedGratuity = scannedGratuity
+        self.settlementPhase = settlementPhase
+        self.archivedReason = archivedReason
         self.shareCode = shareCode
         self.remoteID = remoteID
     }
@@ -2964,6 +3807,16 @@ struct Receipt: Identifiable, Hashable, Codable {
         return items.reduce(0) { partial, item in
             return partial + (item.price ?? 0)
         }
+    }
+
+    var extraFeesTotal: Double {
+        let itemTotal = items.reduce(0) { partial, item in
+            partial + (item.price ?? 0)
+        }
+        if let scannedTotal, scannedTotal > 0 {
+            return max(0, scannedTotal - itemTotal)
+        }
+        return max(0, (scannedTax ?? 0) + (scannedGratuity ?? 0))
     }
 }
 
@@ -2985,6 +3838,9 @@ actor OCRProcessor {
     struct Extraction {
         let items: [ReceiptItem]
         let receiptTotal: Double?
+        let subtotal: Double?
+        let tax: Double?
+        let gratuity: Double?
         let merchantName: String?
     }
 
@@ -2997,6 +3853,7 @@ actor OCRProcessor {
 
     static let shared = OCRProcessor()
     private static let defaultRemoteProcessingURL = "http://localhost:3000/process-receipt"
+    private static let remoteProcessingIPv6FallbackURL = "http://[::1]:3000/process-receipt"
     private static let remoteProcessingFallbackURL = "http://127.0.0.1:3000/process-receipt"
     private static let remoteProcessingEnvKey = "TABBY_RECEIPT_PROCESSING_URL"
     private static let remoteProcessingDefaultsKey = "tabby.receiptProcessingURL"
@@ -3027,7 +3884,7 @@ actor OCRProcessor {
 
     func extract(from images: [UIImage], locationHint: LocationHint? = nil) async -> Extraction {
         guard !images.isEmpty else {
-            return Extraction(items: [], receiptTotal: nil, merchantName: nil)
+            return Extraction(items: [], receiptTotal: nil, subtotal: nil, tax: nil, gratuity: nil, merchantName: nil)
         }
 
         do {
@@ -3041,6 +3898,9 @@ actor OCRProcessor {
                 return Extraction(
                     items: localExtraction.items,
                     receiptTotal: remoteTotal,
+                    subtotal: localExtraction.subtotal,
+                    tax: localExtraction.tax,
+                    gratuity: localExtraction.gratuity,
                     merchantName: remoteExtraction.merchantName
                 )
             }
@@ -3145,7 +4005,14 @@ actor OCRProcessor {
         }
         let normalizedMerchantName = data.merchantName?.trimmingCharacters(in: .whitespacesAndNewlines)
         let merchantName = (normalizedMerchantName?.isEmpty == false) ? normalizedMerchantName : nil
-        return Extraction(items: items, receiptTotal: normalizedTotal, merchantName: merchantName)
+        return Extraction(
+            items: items,
+            receiptTotal: normalizedTotal,
+            subtotal: data.subtotal,
+            tax: data.tax,
+            gratuity: data.gratuity,
+            merchantName: merchantName
+        )
     }
 
     private static var remoteProcessingURLs: [URL] {
@@ -3158,7 +4025,7 @@ actor OCRProcessor {
         if let configured {
             candidates.append(configured)
         }
-        [defaultRemoteProcessingURL, remoteProcessingFallbackURL]
+        [defaultRemoteProcessingURL, remoteProcessingIPv6FallbackURL, remoteProcessingFallbackURL]
             .compactMap { remoteProcessingURL(from: $0) }
             .forEach { candidates.append($0) }
 
@@ -3245,7 +4112,14 @@ actor OCRProcessor {
         let parsed = Self.parseItems(from: normalizedLines)
         let items = parsed.isEmpty ? Self.fallbackItems(from: normalizedLines) : parsed
         let receiptTotal = Self.extractReceiptTotal(from: normalizedLines)
-        return Extraction(items: items, receiptTotal: receiptTotal, merchantName: nil)
+        return Extraction(
+            items: items,
+            receiptTotal: receiptTotal,
+            subtotal: nil,
+            tax: nil,
+            gratuity: nil,
+            merchantName: nil
+        )
     }
 
     private static func multipartBody(

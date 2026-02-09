@@ -66,13 +66,33 @@ struct UserProfile {
     let email: String?
     let pictureURL: String?
     let preferredPaymentMethod: String?
+    let absorbExtraCents: Bool
+    let venmoEnabled: Bool
+    let venmoUsername: String?
+    let cashAppEnabled: Bool
+    let cashAppCashtag: String?
+    let zelleEnabled: Bool
+    let zelleContact: String?
+    let cashApplePayEnabled: Bool
 }
 
 struct ReceiptLiveParticipant: Identifiable, Hashable {
     let id: String
     let name: String
+    let email: String?
+    let avatarURL: String?
     let joinedAt: Date
     let isCurrentUser: Bool
+    let isSubmitted: Bool
+    let paymentStatus: String?
+    let paymentMethod: String?
+    let paymentAmount: Double?
+    let itemSubtotal: Double
+    let taxShare: Double
+    let gratuityShare: Double
+    let extraFeesShare: Double
+    let roundingAdjustment: Double
+    let totalDue: Double
 }
 
 struct ReceiptLiveItem: Identifiable, Hashable {
@@ -98,15 +118,63 @@ struct ReceiptLiveState: Hashable {
     let code: String
     let createdAt: Date
     let isActive: Bool
+    let settlementPhase: String
+    let archivedReason: String?
     let viewerParticipantKey: String?
+    let viewerRemoved: Bool
+    let hostParticipantKey: String?
+    let hostDisplayName: String?
+    let hostHasPaymentOptions: Bool
+    let hostPaymentOptions: ReceiptHostPaymentOptions?
+    let allParticipantsSubmitted: Bool
+    let unclaimedItemCount: Int
+    let extraFeesTotal: Double
+    let tax: Double?
+    let gratuity: Double?
+    let otherFees: Double?
+    let gratuityPercent: Double?
     let participants: [ReceiptLiveParticipant]
     let items: [ReceiptLiveItem]
+    let viewerSettlement: ReceiptViewerSettlement?
+    let hostPaymentQueue: [ReceiptHostPaymentQueueItem]
 
     var claimedTotal: Double {
         items.reduce(0) { partial, item in
             partial + item.viewerClaimedTotal
         }
     }
+}
+
+struct ReceiptHostPaymentOptions: Hashable {
+    let preferredPaymentMethod: String?
+    let venmoEnabled: Bool
+    let venmoUsername: String?
+    let cashAppEnabled: Bool
+    let cashAppCashtag: String?
+    let zelleEnabled: Bool
+    let zelleContact: String?
+    let cashApplePayEnabled: Bool
+}
+
+struct ReceiptViewerSettlement: Hashable {
+    let itemSubtotal: Double
+    let taxShare: Double
+    let gratuityShare: Double
+    let extraFeesShare: Double
+    let roundingAdjustment: Double
+    let totalDue: Double
+    let canPay: Bool
+    let paymentStatus: String?
+    let paymentMethod: String?
+}
+
+struct ReceiptHostPaymentQueueItem: Identifiable, Hashable {
+    let id: String
+    let name: String
+    let amountDue: Double
+    let paymentStatus: String?
+    let paymentMethod: String?
+    let paymentAmount: Double?
 }
 
 private struct RemoteReceiptItemResponse: Decodable {
@@ -124,13 +192,34 @@ private struct RemoteReceiptResponse: Decodable {
     let createdAt: Double
     let clientReceiptId: String?
     let isActive: Bool?
+    let settlementPhase: String?
+    let finalizedAt: Double?
+    let archivedReason: String?
+    let receiptTotal: Double?
+    let subtotal: Double?
+    let tax: Double?
+    let gratuity: Double?
+    let extraFeesTotal: Double?
     let canManage: Bool?
 }
 
 private struct RemoteReceiptLiveParticipantResponse: Decodable {
     let participantKey: String
     let displayName: String
+    let participantEmail: String?
+    let avatarUrl: String?
     let joinedAt: Double
+    let isSubmitted: Bool?
+    let submittedAt: Double?
+    let paymentStatus: String?
+    let paymentMethod: String?
+    let paymentAmount: Double?
+    let itemSubtotal: Double?
+    let taxShare: Double?
+    let gratuityShare: Double?
+    let extraFeesShare: Double?
+    let roundingAdjustment: Double?
+    let totalDue: Double?
 }
 
 private struct RemoteReceiptLiveItemResponse: Decodable {
@@ -150,9 +239,59 @@ private struct RemoteReceiptLiveResponse: Decodable {
     let code: String
     let createdAt: Double
     let isActive: Bool?
+    let settlementPhase: String?
+    let archivedReason: String?
+    let receiptTotal: Double?
+    let subtotal: Double?
+    let tax: Double?
+    let gratuity: Double?
+    let extraFeesTotal: Double?
+    let otherFees: Double?
+    let gratuityPercent: Double?
     let viewerParticipantKey: String?
+    let viewerRemoved: Bool?
+    let hostParticipantKey: String?
+    let hostDisplayName: String?
+    let hostHasPaymentOptions: Bool?
+    let hostPaymentOptions: RemoteReceiptLiveHostPaymentOptionsResponse?
+    let allParticipantsSubmitted: Bool?
+    let unclaimedItemCount: Double?
     let participants: [RemoteReceiptLiveParticipantResponse]
     let items: [RemoteReceiptLiveItemResponse]
+    let viewerSettlement: RemoteReceiptLiveViewerSettlementResponse?
+    let hostPaymentQueue: [RemoteReceiptLiveHostQueueResponse]?
+}
+
+private struct RemoteReceiptLiveViewerSettlementResponse: Decodable {
+    let itemSubtotal: Double?
+    let taxShare: Double?
+    let gratuityShare: Double?
+    let extraFeesShare: Double?
+    let roundingAdjustment: Double?
+    let totalDue: Double?
+    let canPay: Bool?
+    let paymentStatus: String?
+    let paymentMethod: String?
+}
+
+private struct RemoteReceiptLiveHostQueueResponse: Decodable {
+    let participantKey: String
+    let displayName: String
+    let amountDue: Double?
+    let paymentStatus: String?
+    let paymentMethod: String?
+    let paymentAmount: Double?
+}
+
+private struct RemoteReceiptLiveHostPaymentOptionsResponse: Decodable {
+    let preferredPaymentMethod: String?
+    let venmoEnabled: Bool?
+    let venmoUsername: String?
+    let cashAppEnabled: Bool?
+    let cashAppCashtag: String?
+    let zelleEnabled: Bool?
+    let zelleContact: String?
+    let cashApplePayEnabled: Bool?
 }
 
 private struct RemoteClaimUpdateResponse: Decodable {
@@ -160,8 +299,44 @@ private struct RemoteClaimUpdateResponse: Decodable {
     let quantity: Double
 }
 
+private struct RemoteSubmissionStatusResponse: Decodable {
+    let isSubmitted: Bool
+}
+
+private struct RemoteFinalizeSettlementResponse: Decodable {
+    let finalized: Bool
+}
+
+private struct RemoteRemoveParticipantResponse: Decodable {
+    let removed: Bool
+}
+
+private struct RemoteMarkPaymentIntentResponse: Decodable {
+    let marked: Bool
+    let paymentStatus: String?
+    let paymentAmount: Double?
+    let paymentMethod: String?
+}
+
+private struct RemoteConfirmPaymentResponse: Decodable {
+    let confirmed: Bool
+    let archived: Bool?
+}
+
+private struct RemoteUpdateDisplayNameResponse: Decodable {
+    let updated: Bool
+}
+
 private struct RemoteArchiveReceiptResponse: Decodable {
     let archived: Bool
+}
+
+private struct RemoteUnarchiveReceiptResponse: Decodable {
+    let unarchived: Bool
+}
+
+private struct RemoteDestroyReceiptResponse: Decodable {
+    let deleted: Bool
 }
 
 private struct RemoteUserResponse: Decodable {
@@ -169,6 +344,14 @@ private struct RemoteUserResponse: Decodable {
     let email: String?
     let pictureUrl: String?
     let preferredPaymentMethod: String?
+    let absorbExtraCents: Bool?
+    let venmoEnabled: Bool?
+    let venmoUsername: String?
+    let cashAppEnabled: Bool?
+    let cashAppCashtag: String?
+    let zelleEnabled: Bool?
+    let zelleContact: String?
+    let cashApplePayEnabled: Bool?
 }
 
 private struct MutationIdResponse: Decodable {
@@ -411,10 +594,14 @@ final class ConvexService {
         if cachedSession != nil {
             Task {
                 let cachedLogin = await client.loginFromCache()
-                if case .success = cachedLogin {
-                    await upsertAuthenticatedUser()
-                } else {
-                    UserDefaults.standard.set(false, forKey: Self.authStateKey)
+                guard case .success = cachedLogin else {
+                    await self.handleStaleAuth()
+                    return
+                }
+
+                let authValid = await self.verifyAuthOrRelogin()
+                if !authValid {
+                    await self.handleStaleAuth()
                 }
             }
         }
@@ -451,11 +638,17 @@ final class ConvexService {
             return encodedItem
         }
 
-        let response: ShareReceiptResponse = try await client.mutation("receipts:create", with: [
+        var args: [String: ConvexEncodable?] = [
             "clientReceiptId": receipt.id.uuidString,
             "items": encodedItems,
             "guestDeviceId": guestDeviceId
-        ])
+        ]
+        if let total = receipt.scannedTotal { args["receiptTotal"] = total }
+        if let subtotal = receipt.scannedSubtotal { args["subtotal"] = subtotal }
+        if let tax = receipt.scannedTax { args["tax"] = tax }
+        if let gratuity = receipt.scannedGratuity { args["gratuity"] = gratuity }
+
+        let response: ShareReceiptResponse = try await client.mutation("receipts:create", with: args)
         return response
     }
 
@@ -530,6 +723,71 @@ final class ConvexService {
         )
     }
 
+    func setSubmissionStatus(receiptCode: String, isSubmitted: Bool) async throws {
+        let _: RemoteSubmissionStatusResponse = try await client.mutation(
+            "receipts:setSubmissionStatus",
+            with: [
+                "code": receiptCode,
+                "isSubmitted": isSubmitted,
+                "guestDeviceId": guestDeviceId
+            ]
+        )
+    }
+
+    func removeParticipant(receiptCode: String, participantKey: String) async throws {
+        let _: RemoteRemoveParticipantResponse = try await client.mutation(
+            "receipts:removeParticipant",
+            with: [
+                "code": receiptCode,
+                "participantKey": participantKey,
+                "guestDeviceId": guestDeviceId
+            ]
+        )
+    }
+
+    func finalizeSettlement(receiptCode: String) async throws {
+        let _: RemoteFinalizeSettlementResponse = try await client.mutation(
+            "receipts:finalizeSettlement",
+            with: [
+                "code": receiptCode,
+                "guestDeviceId": guestDeviceId
+            ]
+        )
+    }
+
+    func markPaymentIntent(receiptCode: String, method: String) async throws {
+        let _: RemoteMarkPaymentIntentResponse = try await client.mutation(
+            "receipts:markPaymentIntent",
+            with: [
+                "code": receiptCode,
+                "method": method,
+                "guestDeviceId": guestDeviceId
+            ]
+        )
+    }
+
+    func confirmPayment(receiptCode: String, participantKey: String) async throws {
+        let _: RemoteConfirmPaymentResponse = try await client.mutation(
+            "receipts:confirmPayment",
+            with: [
+                "code": receiptCode,
+                "participantKey": participantKey,
+                "guestDeviceId": guestDeviceId
+            ]
+        )
+    }
+
+    func updateParticipantDisplayName(receiptCode: String, displayName: String) async throws {
+        let _: RemoteUpdateDisplayNameResponse = try await client.mutation(
+            "receipts:updateParticipantDisplayName",
+            with: [
+                "code": receiptCode,
+                "displayName": displayName,
+                "guestDeviceId": guestDeviceId
+            ]
+        )
+    }
+
     func fetchRecentReceipts(limit: Int = 20) async throws -> [Receipt] {
         let boundedLimit = max(1, min(limit, 100))
         let stream = client.subscribe(
@@ -561,6 +819,30 @@ final class ConvexService {
         return response.archived
     }
 
+    func unarchiveReceipt(clientReceiptId: String) async throws -> Bool {
+        let response: RemoteUnarchiveReceiptResponse = try await client.mutation(
+            "receipts:unarchive",
+            with: [
+                "clientReceiptId": clientReceiptId,
+                "guestDeviceId": guestDeviceId
+            ]
+        )
+
+        return response.unarchived
+    }
+
+    func destroyReceipt(clientReceiptId: String) async throws -> Bool {
+        let response: RemoteDestroyReceiptResponse = try await client.mutation(
+            "receipts:destroy",
+            with: [
+                "clientReceiptId": clientReceiptId,
+                "guestDeviceId": guestDeviceId
+            ]
+        )
+
+        return response.deleted
+    }
+
     func migrateGuestDataToSignedInAccount() async throws -> Int {
         let response: GuestMigrationResponse = try await client.mutation(
             "receipts:migrateGuestData",
@@ -581,20 +863,47 @@ final class ConvexService {
                 name: payload.name,
                 email: payload.email,
                 pictureURL: payload.pictureUrl,
-                preferredPaymentMethod: payload.preferredPaymentMethod
+                preferredPaymentMethod: payload.preferredPaymentMethod,
+                absorbExtraCents: payload.absorbExtraCents ?? false,
+                venmoEnabled: payload.venmoEnabled ?? false,
+                venmoUsername: payload.venmoUsername,
+                cashAppEnabled: payload.cashAppEnabled ?? false,
+                cashAppCashtag: payload.cashAppCashtag,
+                zelleEnabled: payload.zelleEnabled ?? false,
+                zelleContact: payload.zelleContact,
+                cashApplePayEnabled: payload.cashApplePayEnabled ?? false
             )
         }
 
         return nil
     }
 
-    func updateMyProfile(name: String?, preferredPaymentMethod: String?) async throws {
+    func updateMyProfile(
+        name: String?,
+        preferredPaymentMethod: String?,
+        absorbExtraCents: Bool? = nil,
+        venmoEnabled: Bool? = nil,
+        venmoUsername: String? = nil,
+        cashAppEnabled: Bool? = nil,
+        cashAppCashtag: String? = nil,
+        zelleEnabled: Bool? = nil,
+        zelleContact: String? = nil,
+        cashApplePayEnabled: Bool? = nil
+    ) async throws {
+        var args: [String: ConvexEncodable?] = [:]
+        if let name { args["name"] = name }
+        if let preferredPaymentMethod { args["preferredPaymentMethod"] = preferredPaymentMethod }
+        if let absorbExtraCents { args["absorbExtraCents"] = absorbExtraCents }
+        if let venmoEnabled { args["venmoEnabled"] = venmoEnabled }
+        if let venmoUsername { args["venmoUsername"] = venmoUsername }
+        if let cashAppEnabled { args["cashAppEnabled"] = cashAppEnabled }
+        if let cashAppCashtag { args["cashAppCashtag"] = cashAppCashtag }
+        if let zelleEnabled { args["zelleEnabled"] = zelleEnabled }
+        if let zelleContact { args["zelleContact"] = zelleContact }
+        if let cashApplePayEnabled { args["cashApplePayEnabled"] = cashApplePayEnabled }
         let _: MutationIdResponse = try await client.mutation(
             "users:updateProfile",
-            with: [
-                "name": name,
-                "preferredPaymentMethod": preferredPaymentMethod
-            ]
+            with: args
         )
     }
 
@@ -663,6 +972,12 @@ final class ConvexService {
             items: items,
             isActive: remote.isActive ?? true,
             canManageActions: remote.canManage ?? true,
+            scannedTotal: remote.receiptTotal,
+            scannedSubtotal: remote.subtotal,
+            scannedTax: remote.tax,
+            scannedGratuity: remote.gratuity,
+            settlementPhase: remote.settlementPhase ?? "claiming",
+            archivedReason: remote.archivedReason,
             shareCode: remote.code,
             remoteID: remote.id
         )
@@ -675,8 +990,20 @@ final class ConvexService {
             ReceiptLiveParticipant(
                 id: participant.participantKey,
                 name: participant.displayName,
+                email: participant.participantEmail,
+                avatarURL: participant.avatarUrl,
                 joinedAt: Date(timeIntervalSince1970: participant.joinedAt / 1000),
-                isCurrentUser: participant.participantKey == viewerKey
+                isCurrentUser: participant.participantKey == viewerKey,
+                isSubmitted: participant.isSubmitted ?? false,
+                paymentStatus: participant.paymentStatus,
+                paymentMethod: participant.paymentMethod,
+                paymentAmount: participant.paymentAmount,
+                itemSubtotal: participant.itemSubtotal ?? 0,
+                taxShare: participant.taxShare ?? 0,
+                gratuityShare: participant.gratuityShare ?? 0,
+                extraFeesShare: participant.extraFeesShare ?? 0,
+                roundingAdjustment: participant.roundingAdjustment ?? 0,
+                totalDue: participant.totalDue ?? 0
             )
         }
 
@@ -693,14 +1020,70 @@ final class ConvexService {
                 )
             }
 
+        let viewerSettlement: ReceiptViewerSettlement? = {
+            guard let payload = remote.viewerSettlement else { return nil }
+            return ReceiptViewerSettlement(
+                itemSubtotal: payload.itemSubtotal ?? 0,
+                taxShare: payload.taxShare ?? 0,
+                gratuityShare: payload.gratuityShare ?? 0,
+                extraFeesShare: payload.extraFeesShare ?? 0,
+                roundingAdjustment: payload.roundingAdjustment ?? 0,
+                totalDue: payload.totalDue ?? 0,
+                canPay: payload.canPay ?? false,
+                paymentStatus: payload.paymentStatus,
+                paymentMethod: payload.paymentMethod
+            )
+        }()
+
+        let hostPaymentQueue = (remote.hostPaymentQueue ?? []).map { queueItem in
+            ReceiptHostPaymentQueueItem(
+                id: queueItem.participantKey,
+                name: queueItem.displayName,
+                amountDue: queueItem.amountDue ?? 0,
+                paymentStatus: queueItem.paymentStatus,
+                paymentMethod: queueItem.paymentMethod,
+                paymentAmount: queueItem.paymentAmount
+            )
+        }
+
+        let hostPaymentOptions: ReceiptHostPaymentOptions? = {
+            guard let options = remote.hostPaymentOptions else { return nil }
+            return ReceiptHostPaymentOptions(
+                preferredPaymentMethod: options.preferredPaymentMethod,
+                venmoEnabled: options.venmoEnabled ?? false,
+                venmoUsername: options.venmoUsername,
+                cashAppEnabled: options.cashAppEnabled ?? false,
+                cashAppCashtag: options.cashAppCashtag,
+                zelleEnabled: options.zelleEnabled ?? false,
+                zelleContact: options.zelleContact,
+                cashApplePayEnabled: options.cashApplePayEnabled ?? false
+            )
+        }()
+
         return ReceiptLiveState(
             remoteId: remote.id,
             code: remote.code,
             createdAt: Date(timeIntervalSince1970: remote.createdAt / 1000),
             isActive: remote.isActive ?? true,
+            settlementPhase: remote.settlementPhase ?? "claiming",
+            archivedReason: remote.archivedReason,
             viewerParticipantKey: viewerKey,
+            viewerRemoved: remote.viewerRemoved ?? false,
+            hostParticipantKey: remote.hostParticipantKey,
+            hostDisplayName: remote.hostDisplayName,
+            hostHasPaymentOptions: remote.hostHasPaymentOptions ?? false,
+            hostPaymentOptions: hostPaymentOptions,
+            allParticipantsSubmitted: remote.allParticipantsSubmitted ?? false,
+            unclaimedItemCount: max(0, Int((remote.unclaimedItemCount ?? 0).rounded())),
+            extraFeesTotal: remote.extraFeesTotal ?? 0,
+            tax: remote.tax,
+            gratuity: remote.gratuity,
+            otherFees: remote.otherFees,
+            gratuityPercent: remote.gratuityPercent,
             participants: participants,
-            items: items
+            items: items,
+            viewerSettlement: viewerSettlement,
+            hostPaymentQueue: hostPaymentQueue
         )
     }
 
@@ -710,5 +1093,46 @@ final class ConvexService {
         } catch {
             print("[Tabby] Failed to upsert user: \(error)")
         }
+    }
+
+    /// Tries `upsertMe` to verify the Convex auth token is valid.
+    /// If it fails (expired JWT), checks Apple credential state and signs out if revoked.
+    /// Returns `true` if auth is valid after this call.
+    private func verifyAuthOrRelogin() async -> Bool {
+        do {
+            let _: MutationIdResponse = try await client.mutation("users:upsertMe")
+            return true
+        } catch {
+            print("[Tabby] Cached auth token rejected: \(error)")
+        }
+
+        // The JWT was rejected — check if the Apple credential is still valid.
+        // If the user's Apple ID credential is revoked, sign out.
+        // Otherwise the token just expired — the user needs to re-login explicitly.
+        guard let cachedSession = AppleAuthStorage.loadSession() else {
+            return false
+        }
+
+        let credentialState = await withCheckedContinuation { continuation in
+            ASAuthorizationAppleIDProvider().getCredentialState(forUserID: cachedSession.userID) { state, _ in
+                continuation.resume(returning: state)
+            }
+        }
+
+        if credentialState == .revoked || credentialState == .notFound {
+            print("[Tabby] Apple credential revoked or not found, signing out")
+            return false
+        }
+
+        // Credential is still authorized with Apple but the JWT expired.
+        // Clear the stale session so the user can sign in again cleanly.
+        print("[Tabby] Apple credential valid but JWT expired, clearing stale session")
+        return false
+    }
+
+    private func handleStaleAuth() async {
+        print("[Tabby] Auth is stale, signing out")
+        await client.logout()
+        UserDefaults.standard.set(false, forKey: Self.authStateKey)
     }
 }
