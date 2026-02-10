@@ -11,17 +11,17 @@
 		0A1F3F6E4207418D9B6A3D12 /* ConvexService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1F3F6E4207418D9B6A3D02 /* ConvexService.swift */; };
 		0A1F3F6E4207418D9B6A3D13 /* JoinReceiptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1F3F6E4207418D9B6A3D03 /* JoinReceiptView.swift */; };
 		0A1F3F6E4207418D9B6A3D14 /* ShareReceiptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1F3F6E4207418D9B6A3D04 /* ShareReceiptView.swift */; };
-		0A1F3F6E4207418D9B6A3D15 /* TabbyGradientBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1F3F6E4207418D9B6A3D05 /* TabbyGradientBackground.swift */; };
+		0A1F3F6E4207418D9B6A3D15 /* SPLTGradientBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1F3F6E4207418D9B6A3D05 /* SPLTGradientBackground.swift */; };
 		0A1F3F6E4207418D9B6A3D16 /* ReceiptActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1F3F6E4207418D9B6A3D07 /* ReceiptActivityView.swift */; };
 		0A1F3F6E4207418D9B6A3D21 /* ConvexMobile in Frameworks */ = {isa = PBXBuildFile; productRef = 0A1F3F6E4207418D9B6A3D22 /* ConvexMobile */; };
-		3F9FE3DF03054ED2B74533B5 /* TabbyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD2A44A79CE84F72898170AE /* TabbyApp.swift */; };
+		3F9FE3DF03054ED2B74533B5 /* SPLTApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD2A44A79CE84F72898170AE /* SPLTApp.swift */; };
 		64CAD9DF2F32C62500702557 /* SPLTClip.app in Embed App Clips */ = {isa = PBXBuildFile; fileRef = 64CAD9D32F32C62500702557 /* SPLTClip.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		64F2043F2F3A7A1300D6A8C4 /* NotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64F2043E2F3A7A1300D6A8C4 /* NotificationManager.swift */; };
 		6E36E89F87764636882F131A /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75A7E91F0CF44FC6AEDDC131 /* ContentView.swift */; };
 		7237B9B3907B489795A34B56 /* PermissionCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B03B9B77AB9447F9913847C0 /* PermissionCenter.swift */; };
 		9939148DE9774BEA9DCD0B50 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = A2DBFDF49A034FA8A80131CE /* LaunchScreen.storyboard */; };
 		9998B75EAE624DD3ADD8F635 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80ADA12780554F58932740AC /* OnboardingView.swift */; };
-		B8DB5869A14843318AC273DE /* TabbyTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC77BC8A8F1C4C20B5931B4C /* TabbyTheme.swift */; };
+		B8DB5869A14843318AC273DE /* SPLTTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC77BC8A8F1C4C20B5931B4C /* SPLTTheme.swift */; };
 		E8B850C0243847A286701943 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FA41CCCD510147899AB2604A /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
@@ -54,9 +54,9 @@
 		0A1F3F6E4207418D9B6A3D02 /* ConvexService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvexService.swift; sourceTree = "<group>"; };
 		0A1F3F6E4207418D9B6A3D03 /* JoinReceiptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JoinReceiptView.swift; sourceTree = "<group>"; };
 		0A1F3F6E4207418D9B6A3D04 /* ShareReceiptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareReceiptView.swift; sourceTree = "<group>"; };
-		0A1F3F6E4207418D9B6A3D05 /* TabbyGradientBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabbyGradientBackground.swift; sourceTree = "<group>"; };
+		0A1F3F6E4207418D9B6A3D05 /* SPLTGradientBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SPLTGradientBackground.swift; sourceTree = "<group>"; };
 		0A1F3F6E4207418D9B6A3D07 /* ReceiptActivityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceiptActivityView.swift; sourceTree = "<group>"; };
-		6412DD8D2F32CEFA0085765F /* Tabby.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Tabby.entitlements; sourceTree = "<group>"; };
+		6412DD8D2F32CEFA0085765F /* SPLT.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SPLT.entitlements; sourceTree = "<group>"; };
 		64CAD9D32F32C62500702557 /* SPLTClip.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SPLTClip.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		64F2043E2F3A7A1300D6A8C4 /* NotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationManager.swift; sourceTree = "<group>"; };
 		75A7E91F0CF44FC6AEDDC131 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -65,13 +65,23 @@
 		B03B9B77AB9447F9913847C0 /* PermissionCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionCenter.swift; sourceTree = "<group>"; };
 		B278F5CE4C254359B1C93ABA /* SPLT.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = SPLT.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C07C89602A9B4853AD93A963 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		CC77BC8A8F1C4C20B5931B4C /* TabbyTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabbyTheme.swift; sourceTree = "<group>"; };
+		CC77BC8A8F1C4C20B5931B4C /* SPLTTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SPLTTheme.swift; sourceTree = "<group>"; };
 		FA41CCCD510147899AB2604A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		FD2A44A79CE84F72898170AE /* TabbyApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabbyApp.swift; sourceTree = "<group>"; };
+		FD2A44A79CE84F72898170AE /* SPLTApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SPLTApp.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		64CAD9E32F32C62500702557 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 64CAD9D22F32C62500702557 /* SPLTClip */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		64CAD9D42F32C62500702557 /* TabbyClip */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = TabbyClip; sourceTree = "<group>"; };
+		64CAD9D42F32C62500702557 /* SPLTClip */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (64CAD9E32F32C62500702557 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = SPLTClip; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -101,11 +111,11 @@
 			path = Permissions;
 			sourceTree = "<group>";
 		};
-		0966D3AD5D4E4A649F5AD9C4 /* Tabby */ = {
+		0966D3AD5D4E4A649F5AD9C4 /* SPLT */ = {
 			isa = PBXGroup;
 			children = (
-				6412DD8D2F32CEFA0085765F /* Tabby.entitlements */,
-				FD2A44A79CE84F72898170AE /* TabbyApp.swift */,
+				6412DD8D2F32CEFA0085765F /* SPLT.entitlements */,
+				FD2A44A79CE84F72898170AE /* SPLTApp.swift */,
 				75A7E91F0CF44FC6AEDDC131 /* ContentView.swift */,
 				9EF1594E781B4C7E8F274C0B /* Design */,
 				4A9B6D9A0C254FE28F60FFB8 /* Onboarding */,
@@ -113,7 +123,7 @@
 				0A1F3F6E4207418D9B6A3D06 /* Sharing */,
 				CDC16A3FE49E4F4BB837CF62 /* Resources */,
 			);
-			path = Tabby;
+			path = SPLT;
 			sourceTree = "<group>";
 		};
 		0A1F3F6E4207418D9B6A3D06 /* Sharing */ = {
@@ -125,7 +135,7 @@
 				0A1F3F6E4207418D9B6A3D03 /* JoinReceiptView.swift */,
 				0A1F3F6E4207418D9B6A3D07 /* ReceiptActivityView.swift */,
 				0A1F3F6E4207418D9B6A3D04 /* ShareReceiptView.swift */,
-				0A1F3F6E4207418D9B6A3D05 /* TabbyGradientBackground.swift */,
+				0A1F3F6E4207418D9B6A3D05 /* SPLTGradientBackground.swift */,
 			);
 			path = Sharing;
 			sourceTree = "<group>";
@@ -141,8 +151,8 @@
 		607F63B7F2074C989E6334C8 = {
 			isa = PBXGroup;
 			children = (
-				0966D3AD5D4E4A649F5AD9C4 /* Tabby */,
-				64CAD9D42F32C62500702557 /* TabbyClip */,
+				0966D3AD5D4E4A649F5AD9C4 /* SPLT */,
+				64CAD9D42F32C62500702557 /* SPLTClip */,
 				A7FB826206C74AA8A4A34622 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -150,7 +160,7 @@
 		9EF1594E781B4C7E8F274C0B /* Design */ = {
 			isa = PBXGroup;
 			children = (
-				CC77BC8A8F1C4C20B5931B4C /* TabbyTheme.swift */,
+				CC77BC8A8F1C4C20B5931B4C /* SPLTTheme.swift */,
 			);
 			path = Design;
 			sourceTree = "<group>";
@@ -212,7 +222,7 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				64CAD9D42F32C62500702557 /* TabbyClip */,
+				64CAD9D42F32C62500702557 /* SPLTClip */,
 			);
 			name = SPLTClip;
 			packageProductDependencies = (
@@ -239,7 +249,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 3B92F782C2F3474783101CF4 /* Build configuration list for PBXProject "Tabby" */;
+			buildConfigurationList = 3B92F782C2F3474783101CF4 /* Build configuration list for PBXProject "SPLT" */;
 			compatibilityVersion = "Xcode 15.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -290,12 +300,12 @@
 				0A1F3F6E4207418D9B6A3D13 /* JoinReceiptView.swift in Sources */,
 				0A1F3F6E4207418D9B6A3D16 /* ReceiptActivityView.swift in Sources */,
 				0A1F3F6E4207418D9B6A3D14 /* ShareReceiptView.swift in Sources */,
-				0A1F3F6E4207418D9B6A3D15 /* TabbyGradientBackground.swift in Sources */,
+				0A1F3F6E4207418D9B6A3D15 /* SPLTGradientBackground.swift in Sources */,
 				64F2043F2F3A7A1300D6A8C4 /* NotificationManager.swift in Sources */,
-				3F9FE3DF03054ED2B74533B5 /* TabbyApp.swift in Sources */,
+				3F9FE3DF03054ED2B74533B5 /* SPLTApp.swift in Sources */,
 				6E36E89F87764636882F131A /* ContentView.swift in Sources */,
 				7237B9B3907B489795A34B56 /* PermissionCenter.swift in Sources */,
-				B8DB5869A14843318AC273DE /* TabbyTheme.swift in Sources */,
+				B8DB5869A14843318AC273DE /* SPLTTheme.swift in Sources */,
 				9998B75EAE624DD3ADD8F635 /* OnboardingView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -322,12 +332,12 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = Tabby/Tabby.entitlements;
+				CODE_SIGN_ENTITLEMENTS = SPLT/SPLT.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 3;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = GW925LHMUL;
-				INFOPLIST_FILE = Tabby/Resources/Info.plist;
+				INFOPLIST_FILE = SPLT/Resources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = SPLT;
 				INFOPLIST_KEY_CFBundleIconName = AppIcon;
 				INFOPLIST_KEY_CFBundlePackageType = APPL;
@@ -381,7 +391,7 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
-				CODE_SIGN_ENTITLEMENTS = TabbyClip/TabbyClip.entitlements;
+				CODE_SIGN_ENTITLEMENTS = SPLTClip/SPLTClip.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = GW925LHMUL;
@@ -403,7 +413,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = TabbyClip/Info.plist;
+				INFOPLIST_FILE = SPLTClip/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "";
 				INFOPLIST_KEY_CFBundleIconName = AppIcon;
 				INFOPLIST_KEY_CFBundlePackageType = APPL;
@@ -468,7 +478,7 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
-				CODE_SIGN_ENTITLEMENTS = TabbyClip/TabbyClip.entitlements;
+				CODE_SIGN_ENTITLEMENTS = SPLTClip/SPLTClip.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 3;
@@ -487,7 +497,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = TabbyClip/Info.plist;
+				INFOPLIST_FILE = SPLTClip/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "";
 				INFOPLIST_KEY_CFBundleIconName = AppIcon;
 				INFOPLIST_KEY_CFBundlePackageType = APPL;
@@ -531,7 +541,7 @@
 				ENABLE_PREVIEWS = YES;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = Tabby/Resources/Info.plist;
+				INFOPLIST_FILE = SPLT/Resources/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 0.1;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
@@ -550,11 +560,11 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = Tabby/Tabby.entitlements;
+				CODE_SIGN_ENTITLEMENTS = SPLT/SPLT.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = GW925LHMUL;
-				INFOPLIST_FILE = Tabby/Resources/Info.plist;
+				INFOPLIST_FILE = SPLT/Resources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = SPLT;
 				INFOPLIST_KEY_CFBundleIconName = AppIcon;
 				INFOPLIST_KEY_CFBundlePackageType = APPL;
@@ -587,7 +597,7 @@
 				ENABLE_PREVIEWS = YES;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = Tabby/Resources/Info.plist;
+				INFOPLIST_FILE = SPLT/Resources/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.splt.money;
@@ -604,7 +614,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		3B92F782C2F3474783101CF4 /* Build configuration list for PBXProject "Tabby" */ = {
+		3B92F782C2F3474783101CF4 /* Build configuration list for PBXProject "SPLT" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				7BEBD470B44C47E19FAE4220 /* Debug */,

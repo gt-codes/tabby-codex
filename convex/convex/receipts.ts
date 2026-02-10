@@ -1,6 +1,7 @@
 import { mutation, query, MutationCtx, QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
+import { internal } from "./_generated/api";
 
 const CODE_LENGTH = 6;
 const MAX_CODE_ATTEMPTS = 20;
@@ -140,12 +141,17 @@ export const create = mutation({
 			normalizeMoney(args.tax),
 			normalizeMoney(args.gratuity),
 		);
+		const normalizedGuestId = normalizeGuestDeviceId(args.guestDeviceId);
 		const id = await ctx.db.insert("receipts", {
 			...(owner.kind === "authenticated"
 				? {
 						ownerTokenIdentifier: owner.identity.tokenIdentifier,
 						ownerSubject: owner.identity.subject,
 						ownerIssuer: owner.identity.issuer,
+						// Always store guestDeviceId alongside auth identity so push
+						// token lookups can fall back to it when tokenIdentifier on the
+						// pushTokens row hasn't been set yet (race at app launch).
+						...(normalizedGuestId ? { guestDeviceId: normalizedGuestId } : {}),
 					}
 				: {
 						guestDeviceId: owner.guestDeviceId,
@@ -427,6 +433,10 @@ export const live = query({
 			viewerParticipantKey !== undefined &&
 			viewerParticipantKey !== hostParticipantKey;
 
+		const receiptImageUrl = receipt.imageStorageId
+			? await ctx.storage.getUrl(receipt.imageStorageId)
+			: null;
+
 		return {
 			id: receipt._id,
 			code: receipt.shareCode,
@@ -434,6 +444,7 @@ export const live = query({
 			createdAt: receipt.createdAt,
 			isActive: receipt.isActive ?? true,
 			settlementPhase,
+			receiptImageUrl,
 			archivedReason: receipt.archivedReason,
 			receiptTotal: receipt.receiptTotal,
 			subtotal: receipt.subtotal,
@@ -952,6 +963,25 @@ export const markPaymentIntent = mutation({
 			updatedAt: Date.now(),
 		});
 
+		// Schedule a push notification to the host after a 10-second delay so the
+		// guest has time to complete the external payment flow.
+		const guestDisplayName =
+			normalizedDisplayName(participantRow.displayName) ??
+			defaultParticipantDisplayName(participantIdentity.participantKey);
+		await ctx.scheduler.runAfter(
+			10_000,
+			internal.notifications.sendPaymentNotification,
+			{
+				receiptCode: args.code,
+				participantKey: participantIdentity.participantKey,
+				guestName: guestDisplayName,
+				amount: amountDue,
+				paymentMethod: method,
+				hostTokenIdentifier: receipt.ownerTokenIdentifier,
+				hostGuestDeviceId: receipt.guestDeviceId,
+			},
+		);
+
 		return {
 			marked: true,
 			paymentStatus: PAYMENT_STATUS_PENDING,
@@ -1334,6 +1364,70 @@ export const destroy = mutation({
 	},
 });
 
+export const generateReceiptImageUploadUrl = mutation({
+	args: {
+		code: v.string(),
+		...receiptOwnerArgs,
+	},
+	handler: async (ctx, args) => {
+		const receipt = await getActiveReceiptByCode(ctx, args.code);
+		if (!receipt) {
+			throw new Error("Receipt not found.");
+		}
+		const owner = await resolveReceiptOwner(ctx, args.guestDeviceId);
+		const hostKey = hostParticipantKeyForReceipt(receipt);
+		const viewerKey =
+			owner.kind === "authenticated"
+				? `auth:${owner.identity.tokenIdentifier}`
+				: `guest:${owner.guestDeviceId}`;
+		if (viewerKey !== hostKey) {
+			throw new Error("Only the host can upload a receipt image.");
+		}
+		return await ctx.storage.generateUploadUrl();
+	},
+});
+
+export const setReceiptImage = mutation({
+	args: {
+		code: v.string(),
+		storageId: v.string(),
+		...receiptOwnerArgs,
+	},
+	handler: async (ctx, args) => {
+		const receipt = await getActiveReceiptByCode(ctx, args.code);
+		if (!receipt) {
+			throw new Error("Receipt not found.");
+		}
+		const owner = await resolveReceiptOwner(ctx, args.guestDeviceId);
+		const hostKey = hostParticipantKeyForReceipt(receipt);
+		const viewerKey =
+			owner.kind === "authenticated"
+				? `auth:${owner.identity.tokenIdentifier}`
+				: `guest:${owner.guestDeviceId}`;
+		if (viewerKey !== hostKey) {
+			throw new Error("Only the host can upload a receipt image.");
+		}
+
+		const storageId = args.storageId as Id<"_storage">;
+		const metadata = await ctx.storage.getMetadata(storageId);
+		if (!metadata) {
+			throw new Error("Uploaded receipt image was not found in storage.");
+		}
+
+		// Delete previous image if replacing
+		if (receipt.imageStorageId && receipt.imageStorageId !== storageId) {
+			await ctx.storage.delete(receipt.imageStorageId);
+		}
+
+		await ctx.db.patch(receipt._id, {
+			imageStorageId: storageId,
+			updatedAt: Date.now(),
+		});
+
+		return { id: receipt._id };
+	},
+});
+
 export const migrateGuestData = mutation({
 	args: {
 		guestDeviceId: v.string(),
@@ -1529,6 +1623,7 @@ type ReceiptRecord = {
 	extraFeesTotal?: number;
 	otherFees?: number;
 	gratuityPercent?: number;
+	imageStorageId?: Id<"_storage">;
 	ownerTokenIdentifier?: string;
 	guestDeviceId?: string;
 	receiptJson?: string;
@@ -1541,13 +1636,14 @@ async function addReceiptsFromParticipantRows(
 		receiptId: Id<"receipts">;
 		joinedAt: number;
 	}>,
-	_includeArchived: boolean,
+	includeArchived: boolean,
 ) {
 	for (const row of rows) {
 		const receipt = await ctx.db.get(row.receiptId);
-		// Participants (non-owners) should never see archived/deleted receipts.
-		// The includeArchived flag only applies to owned receipts, not joined ones.
-		if (!receipt || receipt.isActive === false) {
+		if (!receipt) {
+			continue;
+		}
+		if (receipt.isActive === false && !includeArchived) {
 			continue;
 		}
 

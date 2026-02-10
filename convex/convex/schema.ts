@@ -22,6 +22,7 @@ export default defineSchema({
     extraFeesTotal: v.optional(v.number()),
     otherFees: v.optional(v.number()),
     gratuityPercent: v.optional(v.number()),
+    imageStorageId: v.optional(v.id("_storage")),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -87,6 +88,16 @@ export default defineSchema({
       "participantKey",
     ])
     .index("by_receipt_participantKey", ["receiptId", "participantKey"]),
+  pushTokens: defineTable({
+    tokenIdentifier: v.optional(v.string()),
+    guestDeviceId: v.optional(v.string()),
+    apnsToken: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_tokenIdentifier", ["tokenIdentifier"])
+    .index("by_guestDeviceId", ["guestDeviceId"])
+    .index("by_apnsToken", ["apnsToken"]),
   users: defineTable({
     tokenIdentifier: v.string(),
     subject: v.string(),
