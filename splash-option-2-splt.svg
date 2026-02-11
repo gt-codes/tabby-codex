@@ -1,0 +1,24 @@
+<svg width="1440" height="1024" viewBox="0 0 1440 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="bgGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(720 -120) rotate(90) scale(620 860)">
+      <stop offset="0" stop-color="#1B1D26" stop-opacity="0.5"/>
+      <stop offset="0.6" stop-color="#1B1D26" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1440" height="1024" fill="#ECECEC"/>
+  <rect width="1440" height="1024" fill="url(#bgGlow)"/>
+
+  <g fill="#0A0A0A" font-family="Avenir Next, Helvetica Neue, Segoe UI, sans-serif" font-weight="800" text-anchor="middle">
+    <text x="620" y="420" font-size="220" letter-spacing="10">S</text>
+    <text x="820" y="420" font-size="220" letter-spacing="10">P</text>
+    <text x="620" y="660" font-size="220" letter-spacing="10">L</text>
+    <text x="820" y="660" font-size="220" letter-spacing="10">T</text>
+  </g>
+
+  <g>
+    <circle cx="706" cy="760" r="5" fill="#666"/>
+    <circle cx="720" cy="760" r="6" fill="#2B2B2B"/>
+    <circle cx="734" cy="760" r="5" fill="#666"/>
+  </g>
+</svg>

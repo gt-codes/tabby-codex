@@ -256,6 +256,7 @@ private struct ReceiptsView: View {
     @AppStorage("isSignedIn") private var isSignedIn = ConvexService.shared.hasCachedSession
     @EnvironmentObject private var linkRouter: AppLinkRouter
     @EnvironmentObject private var notificationManager: NotificationManager
+    @EnvironmentObject private var startupStore: SPLTStartupStore
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var permissionCenter = PermissionCenter()
     @AppStorage("shouldShowCameraPermissionNudge") private var shouldShowCameraPermissionNudge = false
@@ -285,6 +286,7 @@ private struct ReceiptsView: View {
     @State private var pendingJoinReceipt: Receipt?
     @State private var joinDisplayName = ""
     @State private var showHostSignInSheet = false
+    @State private var didHydrateStartupReceipts = false
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
@@ -444,7 +446,10 @@ private struct ReceiptsView: View {
                 }
             }
             .task {
-                await loadRemoteReceipts()
+                hydrateFromStartupPrefetchIfNeeded()
+                if receipts.isEmpty {
+                    await loadRemoteReceipts()
+                }
             }
             .onAppear {
                 maybeShowCameraPermissionNudgeIfNeeded()
@@ -1001,6 +1006,18 @@ private struct ReceiptsView: View {
         }
 
         await MainActor.run { isLoadingRemoteReceipts = false }
+    }
+
+    private func hydrateFromStartupPrefetchIfNeeded() {
+        guard !didHydrateStartupReceipts else { return }
+        didHydrateStartupReceipts = true
+
+        let prefetchedReceipts = startupStore.consumePrefetchedReceipts()
+        guard !prefetchedReceipts.isEmpty else { return }
+
+        withAnimation(.easeInOut(duration: 0.2)) {
+            receipts = mergeReceipts(local: receipts, remote: prefetchedReceipts)
+        }
     }
 
     private func mergeReceipts(local: [Receipt], remote: [Receipt]) -> [Receipt] {
@@ -1597,6 +1614,7 @@ private enum PreferredPaymentMethod: String, CaseIterable, Identifiable {
 }
 
 private struct ProfileView: View {
+    @EnvironmentObject private var startupStore: SPLTStartupStore
     @AppStorage("profileDisplayName") private var displayName = ""
     @AppStorage("profilePreferredPaymentMethod") private var preferredPaymentMethodRaw = PreferredPaymentMethod.cashApplePay.rawValue
     @AppStorage("profileAbsorbExtraCents") private var absorbExtraCents = false
@@ -1617,6 +1635,7 @@ private struct ProfileView: View {
     @State private var isBusy = false
     @State private var errorMessage: String?
     @State private var lastSyncedDisplayName = ""
+    @State private var didHydrateStartupProfile = false
 
     var body: some View {
         NavigationStack {
@@ -1782,50 +1801,64 @@ private struct ProfileView: View {
 
     private func refreshProfile() async {
         profileImage = ProfilePhotoStore.loadImage()
+        if !didHydrateStartupProfile {
+            didHydrateStartupProfile = true
+            if let prefetchedProfile = startupStore.consumePrefetchedProfile() {
+                let prefetchedImage = await ProfilePhotoStore.loadImage(fromRemoteReference: prefetchedProfile.pictureURL)
+                await MainActor.run {
+                    applyLoadedProfile(prefetchedProfile, remoteImage: prefetchedImage)
+                }
+            }
+        }
+
         do {
             let profile = try await ConvexService.shared.fetchMyProfile()
             let remoteImage = await ProfilePhotoStore.loadImage(fromRemoteReference: profile?.pictureURL)
             await MainActor.run {
-                if let profile {
-                    accountEmail = profile.email
-                    if let remoteImage {
-                        profileImage = remoteImage
-                        if let encoded = ProfilePhotoStore.optimizedJPEGData(for: remoteImage) {
-                            try? ProfilePhotoStore.save(data: encoded)
-                        }
-                    }
-                    let remoteName = profile.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                    if displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                       let remoteName = profile.name,
-                       !remoteName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        displayName = remoteName
-                    }
-                    lastSyncedDisplayName = remoteName
-                    if let remotePayment = profile.preferredPaymentMethod,
-                       PreferredPaymentMethod(rawValue: remotePayment) != nil {
-                        preferredPaymentMethodRaw = remotePayment
-                    }
-                    absorbExtraCents = profile.absorbExtraCents
-                    venmoEnabled = profile.venmoEnabled
-                    venmoUsername = profile.venmoUsername ?? ""
-                    cashAppEnabled = profile.cashAppEnabled
-                    cashAppCashtag = profile.cashAppCashtag ?? ""
-                    zelleEnabled = profile.zelleEnabled
-                    zelleContact = profile.zelleContact ?? ""
-                    cashApplePayEnabled = profile.cashApplePayEnabled
-                } else {
-                    accountEmail = nil
-                    lastSyncedDisplayName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-                }
-                if PreferredPaymentMethod(rawValue: preferredPaymentMethodRaw) == nil {
-                    preferredPaymentMethodRaw = PreferredPaymentMethod.cashApplePay.rawValue
-                }
+                applyLoadedProfile(profile, remoteImage: remoteImage)
                 errorMessage = nil
             }
         } catch {
             await MainActor.run {
                 errorMessage = "Couldn't load profile right now."
             }
+        }
+    }
+
+    private func applyLoadedProfile(_ profile: UserProfile?, remoteImage: UIImage?) {
+        if let profile {
+            accountEmail = profile.email
+            if let remoteImage {
+                profileImage = remoteImage
+                if let encoded = ProfilePhotoStore.optimizedJPEGData(for: remoteImage) {
+                    try? ProfilePhotoStore.save(data: encoded)
+                }
+            }
+            let remoteName = profile.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               let remoteName = profile.name,
+               !remoteName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                displayName = remoteName
+            }
+            lastSyncedDisplayName = remoteName
+            if let remotePayment = profile.preferredPaymentMethod,
+               PreferredPaymentMethod(rawValue: remotePayment) != nil {
+                preferredPaymentMethodRaw = remotePayment
+            }
+            absorbExtraCents = profile.absorbExtraCents
+            venmoEnabled = profile.venmoEnabled
+            venmoUsername = profile.venmoUsername ?? ""
+            cashAppEnabled = profile.cashAppEnabled
+            cashAppCashtag = profile.cashAppCashtag ?? ""
+            zelleEnabled = profile.zelleEnabled
+            zelleContact = profile.zelleContact ?? ""
+            cashApplePayEnabled = profile.cashApplePayEnabled
+        } else {
+            accountEmail = nil
+            lastSyncedDisplayName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if PreferredPaymentMethod(rawValue: preferredPaymentMethodRaw) == nil {
+            preferredPaymentMethodRaw = PreferredPaymentMethod.cashApplePay.rawValue
         }
     }
 
@@ -3960,8 +3993,8 @@ actor OCRProcessor {
     }
 
     static let shared = OCRProcessor()
-    private static let defaultRemoteProcessingURL = "http://Garretts-MacBook-Pro-2.local:3000/process-receipt"
-    private static let defaultRemoteProcessingURLFallback = "http://192.168.1.86:3000/process-receipt"
+    private static let defaultRemoteProcessingURL = "https://splt.money/process-receipt"
+    private static let defaultRemoteProcessingURLFallback = "https://www.splt.money/process-receipt"
     private static let localRemoteProcessingHosts: Set<String> = ["localhost", "127.0.0.1", "::1"]
     private static let remoteProcessingEnvKey = "SPLT_RECEIPT_PROCESSING_URL"
     private static let legacyRemoteProcessingEnvKey = "TABBY_RECEIPT_PROCESSING_URL"

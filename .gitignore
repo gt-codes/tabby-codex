@@ -15,5 +15,6 @@ DerivedData/
 
 # SwiftPM
 .build/
+build/
 Packages/
 Package.resolved

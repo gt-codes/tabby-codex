@@ -1242,6 +1242,11 @@ struct ReceiptActivityView: View {
         return NavigationStack {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 20) {
+                    if let viewerSettlement = liveState.viewerSettlement {
+                        hostShareHeroCard(viewerSettlement: viewerSettlement)
+                        paymentItemizedSection(liveState)
+                    }
+
                     // — Summary header —
                     VStack(spacing: 8) {
                         Text(allConfirmed ? "All payments confirmed" : "\(confirmedCount) of \(guests.count) confirmed")
@@ -1322,6 +1327,27 @@ struct ReceiptActivityView: View {
             .navigationTitle("Payments")
             .navigationBarTitleDisplayMode(.inline)
         }
+    }
+
+    private func hostShareHeroCard(viewerSettlement: ReceiptViewerSettlement) -> some View {
+        VStack(spacing: 12) {
+            Text("Your share")
+                .font(SPLTType.title)
+                .foregroundStyle(SPLTColor.ink.opacity(0.74))
+
+            Text(activityCurrencyText(viewerSettlement.totalDue))
+                .font(.system(size: 56, weight: .black, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(SPLTColor.ink)
+
+            Text("This is your final portion for this receipt.")
+                .font(SPLTType.caption)
+                .foregroundStyle(SPLTColor.ink.opacity(0.58))
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.top, 4)
+        .padding(.bottom, 2)
     }
 
     private func hostPaymentGuestRow(guest: ReceiptHostPaymentQueueItem, liveState: ReceiptLiveState) -> some View {

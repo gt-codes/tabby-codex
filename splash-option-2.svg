@@ -1,0 +1,29 @@
+<svg width="1440" height="1024" viewBox="0 0 1440 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="bgGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(720 -120) rotate(90) scale(620 860)">
+      <stop offset="0" stop-color="#1B1D26" stop-opacity="0.9"/>
+      <stop offset="0.55" stop-color="#1B1D26" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="cardGrad" x1="664" y1="362" x2="776" y2="474" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#141722"/>
+      <stop offset="0.7" stop-color="#0F1014"/>
+    </linearGradient>
+    <filter id="shadow" x="596" y="330" width="248" height="248" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="20" stdDeviation="18" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <rect width="1440" height="1024" fill="#0F1014"/>
+  <rect width="1440" height="1024" fill="url(#bgGlow)"/>
+
+  <g filter="url(#shadow)">
+    <rect x="664" y="392" width="112" height="112" rx="28" fill="url(#cardGrad)" stroke="#2A2D38"/>
+  </g>
+
+  <text x="720" y="460" text-anchor="middle" fill="#D5D8E6" font-family="Avenir Next, Helvetica Neue, Segoe UI, sans-serif" font-size="34" letter-spacing="3">TB</text>
+  <text x="720" y="566" text-anchor="middle" fill="#F5F5F2" fill-opacity="0.94" font-family="Avenir Next, Helvetica Neue, Segoe UI, sans-serif" font-size="25" letter-spacing="7">TABBY</text>
+
+  <circle cx="700" cy="612" r="3" fill="#6F7485"/>
+  <circle cx="720" cy="612" r="4" fill="#9AA0B3"/>
+  <circle cx="740" cy="612" r="3" fill="#6F7485"/>
+</svg>
