@@ -15,6 +15,8 @@ export default defineSchema({
     settlementPhase: v.optional(v.string()),
     finalizedAt: v.optional(v.number()),
     archivedReason: v.optional(v.string()),
+    wasArchivedEver: v.optional(v.boolean()),
+    archivedAt: v.optional(v.number()),
     receiptTotal: v.optional(v.number()),
     subtotal: v.optional(v.number()),
     tax: v.optional(v.number()),
@@ -115,10 +117,24 @@ export default defineSchema({
     zelleEnabled: v.optional(v.boolean()),
     zelleContact: v.optional(v.string()),
     cashApplePayEnabled: v.optional(v.boolean()),
+    freeBillsUsedInPeriod: v.optional(v.number()),
+    currentPeriodStartAt: v.optional(v.number()),
+    currentPeriodEndAt: v.optional(v.number()),
+    billCreditsBalance: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
     lastSeenAt: v.number(),
   })
     .index("by_tokenIdentifier", ["tokenIdentifier"])
     .index("by_createdAt", ["createdAt"]),
+  billCreditPurchases: defineTable({
+    tokenIdentifier: v.string(),
+    transactionId: v.string(),
+    productId: v.string(),
+    creditsGranted: v.number(),
+    purchasedAt: v.number(),
+    createdAt: v.number(),
+  })
+    .index("by_transactionId", ["transactionId"])
+    .index("by_tokenIdentifier_createdAt", ["tokenIdentifier", "createdAt"]),
 });

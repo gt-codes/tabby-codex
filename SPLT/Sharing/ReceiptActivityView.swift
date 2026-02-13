@@ -134,6 +134,13 @@ struct ReceiptActivityView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
+        .sheet(isPresented: $model.isBillCreditPurchaseSheetPresented) {
+            BillCreditsPurchaseSheet {
+                Task {
+                    await model.retry()
+                }
+            }
+        }
         .sheet(isPresented: $isSettlementSheetPresented) {
             if case .ready(let liveState) = model.state {
                 settlementPreviewSheet(liveState)
@@ -2861,6 +2868,7 @@ final class ReceiptActivityViewModel: ObservableObject {
     @Published var isPrimaryActionPending = false
     @Published var actionErrorMessage: String?
     @Published var shouldExitToReceipts = false
+    @Published var isBillCreditPurchaseSheetPresented = false
 
     private let seedReceipt: Receipt
     private var subscriptionTask: Task<Void, Never>?
@@ -2879,13 +2887,19 @@ final class ReceiptActivityViewModel: ObservableObject {
 
         state = .loading
         shouldExitToReceipts = false
+        isBillCreditPurchaseSheetPresented = false
 
         do {
             let code = try await ensureShareCode()
             _ = try await ConvexService.shared.joinReceipt(withCode: code)
             subscribeToLiveReceipt(withCode: code)
         } catch {
-            state = .error(error.localizedDescription)
+            if isBillCreditRequiredError(error) {
+                state = .error("You've used all free bills for this period. Buy bill credits to host another bill.")
+                isBillCreditPurchaseSheetPresented = true
+            } else {
+                state = .error(error.localizedDescription)
+            }
         }
     }
 
@@ -3014,6 +3028,7 @@ final class ReceiptActivityViewModel: ObservableObject {
             scannedGratuity: seedReceipt.scannedGratuity,
             settlementPhase: seedReceipt.settlementPhase,
             archivedReason: seedReceipt.archivedReason,
+            wasArchivedEver: seedReceipt.wasArchivedEver,
             shareCode: code,
             remoteID: response.id
         )
@@ -3031,6 +3046,10 @@ final class ReceiptActivityViewModel: ObservableObject {
         }
 
         return code
+    }
+
+    private func isBillCreditRequiredError(_ error: Error) -> Bool {
+        error.localizedDescription.uppercased().contains("BILL_CREDIT_REQUIRED")
     }
 
     private func subscribeToLiveReceipt(withCode code: String) {
@@ -3061,6 +3080,7 @@ final class ReceiptActivityViewModel: ObservableObject {
                         scannedGratuity: payload.gratuity ?? self.shareReceipt?.scannedGratuity,
                         settlementPhase: payload.settlementPhase,
                         archivedReason: payload.archivedReason,
+                        wasArchivedEver: self.shareReceipt?.wasArchivedEver ?? false,
                         shareCode: payload.code,
                         remoteID: payload.remoteId
                     )

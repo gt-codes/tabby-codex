@@ -2,6 +2,11 @@ import { mutation, query, MutationCtx, QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
+import {
+	consumeBillAllowance,
+	deriveBillingUsageState,
+	usageStateToPatch,
+} from "./billingShared";
 
 const CODE_LENGTH = 6;
 const MAX_CODE_ATTEMPTS = 20;
@@ -13,6 +18,9 @@ const PAYMENT_STATUS_PENDING = "pending";
 const PAYMENT_STATUS_CONFIRMED = "confirmed";
 const ARCHIVE_REASON_MANUAL = "manual";
 const ARCHIVE_REASON_AUTO_SETTLED = "auto_settled";
+const ERROR_BILL_CREDIT_REQUIRED = "BILL_CREDIT_REQUIRED";
+const ERROR_RECEIPT_DELETE_BLOCKED_ARCHIVED_HISTORY =
+	"RECEIPT_DELETE_BLOCKED_ARCHIVED_HISTORY";
 const PAYMENT_METHODS = new Set([
 	"venmo",
 	"cash_app",
@@ -74,6 +82,16 @@ type NormalizedReceiptItem = {
 	sortOrder: number;
 };
 
+type AuthenticatedUserRecord = {
+	_id: Id<"users">;
+	createdAt: number;
+	name?: string;
+	freeBillsUsedInPeriod?: number;
+	currentPeriodStartAt?: number;
+	currentPeriodEndAt?: number;
+	billCreditsBalance?: number;
+};
+
 export const create = mutation({
 	args: {
 		clientReceiptId: v.string(),
@@ -84,9 +102,10 @@ export const create = mutation({
 	handler: async (ctx, args) => {
 		const owner = await resolveReceiptOwner(ctx, args.guestDeviceId);
 		const now = Date.now();
+		let ownerUser: AuthenticatedUserRecord | null = null;
 
 		if (owner.kind === "authenticated") {
-			await upsertUserFromIdentity(ctx, owner.identity, now);
+			ownerUser = await upsertUserFromIdentity(ctx, owner.identity, now);
 		}
 
 		const existing = await findExistingReceiptForOwner(
@@ -106,6 +125,11 @@ export const create = mutation({
 				settlementPhase: SETTLEMENT_PHASE_CLAIMING,
 				finalizedAt: undefined,
 				archivedReason: undefined,
+				wasArchivedEver:
+					existing.wasArchivedEver === true ||
+					existing.archivedReason !== undefined ||
+					existing.archivedAt !== undefined ||
+					existing.isActive === false,
 				receiptTotal: normalizeMoney(args.receiptTotal),
 				subtotal: normalizeMoney(args.subtotal),
 				tax: normalizeMoney(args.tax),
@@ -134,6 +158,19 @@ export const create = mutation({
 			};
 		}
 
+		if (owner.kind === "authenticated" && ownerUser) {
+			const usage = deriveBillingUsageState(ownerUser, now);
+			const allowance = consumeBillAllowance(usage);
+			if (!allowance.source) {
+				throw new Error(ERROR_BILL_CREDIT_REQUIRED);
+			}
+			await ctx.db.patch(ownerUser._id, {
+				...usageStateToPatch(allowance.updated),
+				updatedAt: now,
+				lastSeenAt: now,
+			});
+		}
+
 		const shareCode = await generateUniqueShareCode(ctx);
 		const insertExtraFeesTotal = computeExtraFeesTotal(
 			normalizeMoney(args.receiptTotal),
@@ -160,6 +197,7 @@ export const create = mutation({
 			shareCode,
 			isActive: true,
 			settlementPhase: SETTLEMENT_PHASE_CLAIMING,
+			wasArchivedEver: false,
 			receiptTotal: normalizeMoney(args.receiptTotal),
 			subtotal: normalizeMoney(args.subtotal),
 			tax: normalizeMoney(args.tax),
@@ -208,6 +246,7 @@ export const get = query({
 			isActive: receipt.isActive ?? true,
 			settlementPhase: receipt.settlementPhase ?? SETTLEMENT_PHASE_CLAIMING,
 			archivedReason: receipt.archivedReason,
+			wasArchivedEver: receipt.wasArchivedEver === true,
 			receiptTotal: receipt.receiptTotal,
 			subtotal: receipt.subtotal,
 			tax: receipt.tax,
@@ -263,6 +302,7 @@ export const join = mutation({
 			isActive: receipt.isActive ?? true,
 			settlementPhase: receipt.settlementPhase ?? SETTLEMENT_PHASE_CLAIMING,
 			archivedReason: receipt.archivedReason,
+			wasArchivedEver: receipt.wasArchivedEver === true,
 			receiptTotal: receipt.receiptTotal,
 			subtotal: receipt.subtotal,
 			tax: receipt.tax,
@@ -446,6 +486,7 @@ export const live = query({
 			settlementPhase,
 			receiptImageUrl,
 			archivedReason: receipt.archivedReason,
+			wasArchivedEver: receipt.wasArchivedEver === true,
 			receiptTotal: receipt.receiptTotal,
 			subtotal: receipt.subtotal,
 			tax: receipt.tax,
@@ -1075,10 +1116,13 @@ export const confirmPayment = mutation({
 
 		let archived = false;
 		if (allGuestsPaid && payableParticipants.length > 0) {
+			const archivedAt = Date.now();
 			await ctx.db.patch(receipt._id, {
 				isActive: false,
 				archivedReason: ARCHIVE_REASON_AUTO_SETTLED,
-				updatedAt: Date.now(),
+				wasArchivedEver: true,
+				archivedAt,
+				updatedAt: archivedAt,
 			});
 			archived = true;
 		}
@@ -1278,10 +1322,13 @@ export const archive = mutation({
 			return { archived: false };
 		}
 
+		const archivedAt = Date.now();
 		await ctx.db.patch(existing._id, {
 			isActive: false,
 			archivedReason: ARCHIVE_REASON_MANUAL,
-			updatedAt: Date.now(),
+			wasArchivedEver: true,
+			archivedAt,
+			updatedAt: archivedAt,
 		});
 
 		return { archived: true };
@@ -1308,6 +1355,8 @@ export const unarchive = mutation({
 		await ctx.db.patch(existing._id, {
 			isActive: true,
 			archivedReason: undefined,
+			wasArchivedEver: true,
+			archivedAt: existing.archivedAt,
 			updatedAt: Date.now(),
 		});
 
@@ -1330,6 +1379,14 @@ export const destroy = mutation({
 
 		if (!existing) {
 			return { deleted: false };
+		}
+		const hasArchivedHistory =
+			existing.wasArchivedEver === true ||
+			existing.isActive === false ||
+			existing.archivedReason !== undefined ||
+			existing.archivedAt !== undefined;
+		if (hasArchivedHistory) {
+			throw new Error(ERROR_RECEIPT_DELETE_BLOCKED_ARCHIVED_HISTORY);
 		}
 
 		// Delete all claims for this receipt
@@ -1616,6 +1673,8 @@ type ReceiptRecord = {
 	settlementPhase?: string;
 	finalizedAt?: number;
 	archivedReason?: string;
+	wasArchivedEver?: boolean;
+	archivedAt?: number;
 	receiptTotal?: number;
 	subtotal?: number;
 	tax?: number;
@@ -1681,6 +1740,7 @@ async function mapReceiptsForQuery(
 				settlementPhase: receipt.settlementPhase ?? SETTLEMENT_PHASE_CLAIMING,
 				finalizedAt: receipt.finalizedAt,
 				archivedReason: receipt.archivedReason,
+				wasArchivedEver: receipt.wasArchivedEver === true,
 				receiptTotal: receipt.receiptTotal,
 				subtotal: receipt.subtotal,
 				tax: receipt.tax,
@@ -2778,7 +2838,7 @@ async function upsertUserFromIdentity(
 	ctx: MutationCtx,
 	identity: AuthIdentity,
 	now: number,
-) {
+): Promise<AuthenticatedUserRecord> {
 	const existingUser = await ctx.db
 		.query("users")
 		.withIndex("by_tokenIdentifier", (q) =>
@@ -2786,26 +2846,42 @@ async function upsertUserFromIdentity(
 		)
 		.first();
 
-	const patch = {
+	const patch: {
+		subject: string;
+		issuer: string;
+		email?: string;
+		pictureUrl?: string;
+		updatedAt: number;
+		lastSeenAt: number;
+		name?: string;
+	} = {
 		subject: identity.subject,
 		issuer: identity.issuer,
-		name: identity.name,
 		email: identity.email,
 		pictureUrl: identity.pictureUrl,
 		updatedAt: now,
 		lastSeenAt: now,
 	};
+	if (!existingUser?.name && identity.name) {
+		patch.name = identity.name;
+	}
 
 	if (existingUser) {
 		await ctx.db.patch(existingUser._id, patch);
-		return;
+		return { ...existingUser, ...patch };
 	}
 
-	await ctx.db.insert("users", {
+	const userId = await ctx.db.insert("users", {
 		tokenIdentifier: identity.tokenIdentifier,
 		...patch,
 		createdAt: now,
+		...usageStateToPatch(deriveBillingUsageState({ createdAt: now }, now)),
 	});
+	const insertedUser = await ctx.db.get(userId);
+	if (!insertedUser) {
+		throw new Error("Failed to create user.");
+	}
+	return insertedUser;
 }
 
 async function generateUniqueShareCode(ctx: MutationCtx): Promise<string> {

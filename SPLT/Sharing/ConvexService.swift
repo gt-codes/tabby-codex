@@ -76,6 +76,23 @@ struct UserProfile {
     let cashApplePayEnabled: Bool
 }
 
+struct BillUsageSummary {
+    let freeLimit: Int
+    let freeUsed: Int
+    let freeRemaining: Int
+    let periodStartAt: Date
+    let periodEndAt: Date
+    let billCreditsBalance: Int
+    let canHostNewBill: Bool
+}
+
+struct CreditPurchaseRedemption {
+    let applied: Bool
+    let transactionId: String
+    let creditsGranted: Int
+    let billCreditsBalance: Int
+}
+
 struct ReceiptLiveParticipant: Identifiable, Hashable {
     let id: String
     let name: String
@@ -202,6 +219,7 @@ private struct RemoteReceiptResponse: Decodable {
     let gratuity: Double?
     let extraFeesTotal: Double?
     let canManage: Bool?
+    let wasArchivedEver: Bool?
 }
 
 private struct RemoteReceiptLiveParticipantResponse: Decodable {
@@ -354,6 +372,23 @@ private struct RemoteUserResponse: Decodable {
     let zelleEnabled: Bool?
     let zelleContact: String?
     let cashApplePayEnabled: Bool?
+}
+
+private struct RemoteBillingUsageSummaryResponse: Decodable {
+    let freeLimit: Double
+    let freeUsed: Double
+    let freeRemaining: Double
+    let periodStartAt: Double
+    let periodEndAt: Double
+    let billCreditsBalance: Double
+    let canHostNewBill: Bool
+}
+
+private struct RemoteCreditPurchaseRedemptionResponse: Decodable {
+    let applied: Bool
+    let transactionId: String
+    let creditsGranted: Double
+    let billCreditsBalance: Double
 }
 
 private struct MutationIdResponse: Decodable {
@@ -897,6 +932,54 @@ final class ConvexService {
         return nil
     }
 
+    func fetchBillingUsageSummary() async throws -> BillUsageSummary {
+        let stream = client.subscribe(
+            to: "billing:getUsageSummary",
+            yielding: RemoteBillingUsageSummaryResponse?.self
+        ).values
+
+        for try await payload in stream {
+            guard let payload else { continue }
+            return BillUsageSummary(
+                freeLimit: max(0, Int(payload.freeLimit.rounded())),
+                freeUsed: max(0, Int(payload.freeUsed.rounded())),
+                freeRemaining: max(0, Int(payload.freeRemaining.rounded())),
+                periodStartAt: Date(timeIntervalSince1970: payload.periodStartAt / 1000),
+                periodEndAt: Date(timeIntervalSince1970: payload.periodEndAt / 1000),
+                billCreditsBalance: max(0, Int(payload.billCreditsBalance.rounded())),
+                canHostNewBill: payload.canHostNewBill
+            )
+        }
+
+        throw NSError(domain: "ConvexService", code: 404, userInfo: [
+            NSLocalizedDescriptionKey: "Billing usage summary not available."
+        ])
+    }
+
+    func redeemCreditPurchase(
+        transactionId: String,
+        productId: String,
+        purchasedAt: Date?
+    ) async throws -> CreditPurchaseRedemption {
+        var args: [String: ConvexEncodable?] = [
+            "transactionId": transactionId,
+            "productId": productId
+        ]
+        if let purchasedAt {
+            args["purchasedAt"] = purchasedAt.timeIntervalSince1970 * 1000
+        }
+        let response: RemoteCreditPurchaseRedemptionResponse = try await client.mutation(
+            "billing:redeemCreditPurchase",
+            with: args
+        )
+        return CreditPurchaseRedemption(
+            applied: response.applied,
+            transactionId: response.transactionId,
+            creditsGranted: max(0, Int(response.creditsGranted.rounded())),
+            billCreditsBalance: max(0, Int(response.billCreditsBalance.rounded()))
+        )
+    }
+
     func updateMyProfile(
         name: String?,
         preferredPaymentMethod: String?,
@@ -1030,6 +1113,7 @@ final class ConvexService {
             scannedGratuity: remote.gratuity,
             settlementPhase: remote.settlementPhase ?? "claiming",
             archivedReason: remote.archivedReason,
+            wasArchivedEver: remote.wasArchivedEver ?? false,
             shareCode: remote.code,
             remoteID: remote.id
         )

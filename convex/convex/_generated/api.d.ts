@@ -8,6 +8,8 @@
  * @module
  */
 
+import type * as billing from "../billing.js";
+import type * as billingShared from "../billingShared.js";
 import type * as notifications from "../notifications.js";
 import type * as receipts from "../receipts.js";
 import type * as users from "../users.js";
@@ -19,6 +21,8 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  billing: typeof billing;
+  billingShared: typeof billingShared;
   notifications: typeof notifications;
   receipts: typeof receipts;
   users: typeof users;

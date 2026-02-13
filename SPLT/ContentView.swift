@@ -570,10 +570,12 @@ private struct ReceiptsView: View {
                                     }
                                 }
 
-                                Button(role: .destructive) {
-                                    deleteReceipt(receipt)
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
+                                if !receipt.wasArchivedEver {
+                                    Button(role: .destructive) {
+                                        deleteReceipt(receipt)
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
                                 }
                             }
                         } else {
@@ -800,6 +802,7 @@ private struct ReceiptsView: View {
 
         withAnimation(.easeInOut(duration: 0.22)) {
             receipts[index].isActive = false
+            receipts[index].wasArchivedEver = true
         }
 
         Task {
@@ -809,6 +812,7 @@ private struct ReceiptsView: View {
 
     private func deleteReceipt(_ receipt: Receipt) {
         guard receipt.canManageActions else { return }
+        guard !receipt.wasArchivedEver else { return }
         withAnimation(.easeInOut(duration: 0.22)) {
             receipts.removeAll { matchesReceipt($0, receipt) }
         }
@@ -1090,6 +1094,7 @@ private struct ReceiptsView: View {
             scannedGratuity: incoming.scannedGratuity ?? existing.scannedGratuity,
             settlementPhase: incoming.settlementPhase,
             archivedReason: incoming.archivedReason ?? existing.archivedReason,
+            wasArchivedEver: incoming.wasArchivedEver || existing.wasArchivedEver,
             shareCode: incoming.shareCode ?? existing.shareCode,
             remoteID: incoming.remoteID ?? existing.remoteID
         )
@@ -1636,18 +1641,27 @@ private struct ProfileView: View {
     @State private var errorMessage: String?
     @State private var lastSyncedDisplayName = ""
     @State private var didHydrateStartupProfile = false
+    @State private var billUsageSummary: BillUsageSummary?
+    @State private var isBillingLoading = false
+    @State private var showBillCreditsSheet = false
 
     var body: some View {
         NavigationStack {
             Form {
                 profileHeaderSection
                 accountMenuSection
+                billCreditsSection
                 appearanceSection
                 receiptCaptureSection
                 authSection
                 errorSection
             }
             .navigationBarTitleDisplayMode(.inline)
+        }
+        .sheet(isPresented: $showBillCreditsSheet) {
+            BillCreditsPurchaseSheet {
+                Task { await refreshProfile() }
+            }
         }
         .task {
             await refreshProfile()
@@ -1716,6 +1730,91 @@ private struct ProfileView: View {
                 )
             } label: {
                 settingsRow(title: "Payment options", systemImage: "creditcard")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var billCreditsSection: some View {
+        if isSignedIn {
+            Section("Bill Credits") {
+                Button {
+                    showBillCreditsSheet = true
+                } label: {
+                    VStack(alignment: .leading, spacing: 14) {
+                        if let billUsageSummary {
+                            let safeLimit = max(1, billUsageSummary.freeLimit)
+                            let freeProgress = min(
+                                Double(billUsageSummary.freeUsed),
+                                Double(safeLimit)
+                            )
+
+                            Text("\(billUsageSummary.freeRemaining) bills left this period")
+                                .font(SPLTType.bodyBold)
+                                .foregroundStyle(.primary)
+
+                            ProgressView(value: freeProgress, total: Double(safeLimit))
+                                .tint(SPLTColor.accent)
+
+                            HStack(alignment: .top) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Period start")
+                                        .font(SPLTType.caption)
+                                        .foregroundStyle(.secondary)
+                                    Text(billUsageSummary.periodStartAt.formatted(date: .abbreviated, time: .omitted))
+                                        .font(SPLTType.caption)
+                                        .foregroundStyle(.primary)
+                                    Text("\(billUsageSummary.freeLimit) free bills total")
+                                        .font(SPLTType.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                Spacer()
+
+                                VStack(alignment: .trailing, spacing: 2) {
+                                    Text("Period end")
+                                        .font(SPLTType.caption)
+                                        .foregroundStyle(.secondary)
+                                    Text(billUsageSummary.periodEndAt.formatted(date: .abbreviated, time: .omitted))
+                                        .font(SPLTType.caption)
+                                        .foregroundStyle(.primary)
+                                    Text("\(billUsageSummary.freeRemaining) left")
+                                        .font(SPLTType.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        } else if isBillingLoading {
+                            HStack(spacing: 10) {
+                                ProgressView()
+                                Text("Loading bill usage")
+                                    .font(SPLTType.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        } else {
+                            Text("Bill usage unavailable right now.")
+                                .font(SPLTType.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Divider()
+
+                        HStack(spacing: 8) {
+                            Text("View bill credits")
+                                .font(SPLTType.bodyBold)
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .padding(.vertical, 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
         }
     }
@@ -1801,6 +1900,14 @@ private struct ProfileView: View {
 
     private func refreshProfile() async {
         profileImage = ProfilePhotoStore.loadImage()
+        if isSignedIn {
+            await MainActor.run { isBillingLoading = true }
+        } else {
+            await MainActor.run {
+                billUsageSummary = nil
+                isBillingLoading = false
+            }
+        }
         if !didHydrateStartupProfile {
             didHydrateStartupProfile = true
             if let prefetchedProfile = startupStore.consumePrefetchedProfile() {
@@ -1813,13 +1920,19 @@ private struct ProfileView: View {
 
         do {
             let profile = try await ConvexService.shared.fetchMyProfile()
+            let usage = isSignedIn
+                ? try? await ConvexService.shared.fetchBillingUsageSummary()
+                : nil
             let remoteImage = await ProfilePhotoStore.loadImage(fromRemoteReference: profile?.pictureURL)
             await MainActor.run {
                 applyLoadedProfile(profile, remoteImage: remoteImage)
+                billUsageSummary = usage
+                isBillingLoading = false
                 errorMessage = nil
             }
         } catch {
             await MainActor.run {
+                isBillingLoading = false
                 errorMessage = "Couldn't load profile right now."
             }
         }
@@ -1856,6 +1969,7 @@ private struct ProfileView: View {
         } else {
             accountEmail = nil
             lastSyncedDisplayName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+            billUsageSummary = nil
         }
         if PreferredPaymentMethod(rawValue: preferredPaymentMethodRaw) == nil {
             preferredPaymentMethodRaw = PreferredPaymentMethod.cashApplePay.rawValue
@@ -1979,6 +2093,8 @@ private struct ProfileView: View {
         await MainActor.run {
             accountEmail = nil
             lastSyncedDisplayName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+            billUsageSummary = nil
+            isBillingLoading = false
             errorMessage = nil
             isBusy = false
         }
@@ -3908,6 +4024,7 @@ struct Receipt: Identifiable, Hashable, Codable {
     var scannedGratuity: Double?
     var settlementPhase: String
     var archivedReason: String?
+    var wasArchivedEver: Bool
     var shareCode: String?
     var remoteID: String?
 
@@ -3923,6 +4040,7 @@ struct Receipt: Identifiable, Hashable, Codable {
         scannedGratuity: Double? = nil,
         settlementPhase: String = "claiming",
         archivedReason: String? = nil,
+        wasArchivedEver: Bool = false,
         shareCode: String? = nil,
         remoteID: String? = nil
     ) {
@@ -3937,6 +4055,7 @@ struct Receipt: Identifiable, Hashable, Codable {
         self.scannedGratuity = scannedGratuity
         self.settlementPhase = settlementPhase
         self.archivedReason = archivedReason
+        self.wasArchivedEver = wasArchivedEver
         self.shareCode = shareCode
         self.remoteID = remoteID
     }
