@@ -476,7 +476,7 @@ private enum OnboardingStep: Int, CaseIterable, Identifiable {
         case .scan:
             return "AI validation keeps the totals accurate. Tap any line item to fix it."
         case .share:
-            return "QR is primary. Contacts and SMS are there when you need them."
+            return "QR is primary. Copy link and Share are there when you need them."
         case .pay:
             return "Item split waits for host confirmation. Bill split is instant."
         case .ready:
@@ -591,7 +591,7 @@ private enum OnboardingStep: Int, CaseIterable, Identifiable {
         case .share:
             return [
                 OnboardingBullet(icon: "qrcode", title: "QR first", detail: "Large, visible invite at the table.", tint: SPLTColor.mint),
-                OnboardingBullet(icon: "person.2.fill", title: "Contacts", detail: "Add friends in one tap.", tint: SPLTColor.mint),
+                OnboardingBullet(icon: "link", title: "Copy link", detail: "Paste the join link anywhere.", tint: SPLTColor.mint),
                 OnboardingBullet(icon: "message.fill", title: "SMS link", detail: "Send a join link when needed.", tint: SPLTColor.mint)
             ]
         case .pay:

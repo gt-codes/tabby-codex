@@ -1,5 +1,4 @@
 import AVFoundation
-import Contacts
 import CoreLocation
 import SwiftUI
 import UIKit
@@ -7,14 +6,12 @@ import UIKit
 @MainActor
 final class PermissionCenter: NSObject, ObservableObject {
     @Published private(set) var cameraStatus: AVAuthorizationStatus
-    @Published private(set) var contactsStatus: CNAuthorizationStatus
     @Published private(set) var locationStatus: CLAuthorizationStatus
 
     private var locationManager: CLLocationManager?
 
     override init() {
         cameraStatus = AVCaptureDevice.authorizationStatus(for: .video)
-        contactsStatus = CNContactStore.authorizationStatus(for: .contacts)
         locationStatus = CLLocationManager.authorizationStatus()
         super.init()
     }
@@ -23,17 +20,12 @@ final class PermissionCenter: NSObject, ObservableObject {
         cameraStatus == .authorized
     }
 
-    var contactsEnabled: Bool {
-        contactsStatus == .authorized
-    }
-
     var locationEnabled: Bool {
         locationStatus == .authorizedAlways || locationStatus == .authorizedWhenInUse
     }
 
     func refreshStatuses() {
         cameraStatus = AVCaptureDevice.authorizationStatus(for: .video)
-        contactsStatus = CNContactStore.authorizationStatus(for: .contacts)
         locationStatus = CLLocationManager.authorizationStatus()
     }
 
@@ -45,18 +37,6 @@ final class PermissionCenter: NSObject, ObservableObject {
                 }
             }
         } else if cameraStatus == .denied || cameraStatus == .restricted {
-            openSettings()
-        }
-    }
-
-    func requestContacts() {
-        if contactsStatus == .notDetermined {
-            CNContactStore().requestAccess(for: .contacts) { [weak self] _, _ in
-                Task { @MainActor in
-                    self?.contactsStatus = CNContactStore.authorizationStatus(for: .contacts)
-                }
-            }
-        } else if contactsStatus == .denied || contactsStatus == .restricted {
             openSettings()
         }
     }

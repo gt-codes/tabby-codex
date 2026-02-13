@@ -20,8 +20,6 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>NSCameraUsageDescription</key>
 	<string>SPLT needs camera access to scan receipts.</string>
-	<key>NSContactsUsageDescription</key>
-	<string>SPLT uses contacts to add friends quickly.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>SPLT needs photo access to import receipt images.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
