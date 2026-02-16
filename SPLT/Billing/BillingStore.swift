@@ -17,8 +17,15 @@ final class BillingStore: ObservableObject {
     @Published private(set) var isRefreshingUsage = false
     @Published var purchaseInFlightProductID: String?
     @Published var lastErrorMessage: String?
+    private var transactionUpdatesTask: Task<Void, Never>?
 
-    private init() {}
+    private init() {
+        startTransactionUpdatesListener()
+    }
+
+    deinit {
+        transactionUpdatesTask?.cancel()
+    }
 
     func refresh() async {
         await loadProducts()
@@ -70,13 +77,7 @@ final class BillingStore: ObservableObject {
             switch result {
             case .success(let verification):
                 let transaction = try checkVerified(verification)
-                _ = try await ConvexService.shared.redeemCreditPurchase(
-                    transactionId: String(transaction.id),
-                    productId: transaction.productID,
-                    purchasedAt: transaction.purchaseDate
-                )
-                await transaction.finish()
-                await refreshUsageSummary()
+                try await handleCompletedTransaction(transaction, knownProduct: product)
                 lastErrorMessage = nil
                 return true
             case .pending:
@@ -116,6 +117,55 @@ final class BillingStore: ObservableObject {
                 userInfo: [NSLocalizedDescriptionKey: "Purchase verification failed."]
             )
         }
+    }
+
+    private func startTransactionUpdatesListener() {
+        guard transactionUpdatesTask == nil else { return }
+        transactionUpdatesTask = Task { [weak self] in
+            for await verification in StoreKit.Transaction.updates {
+                guard let self else { return }
+                do {
+                    let transaction = try self.checkVerified(verification)
+                    try await self.handleCompletedTransaction(transaction, knownProduct: nil)
+                } catch {
+                    await MainActor.run {
+                        self.lastErrorMessage = "Purchase couldn't be completed."
+                    }
+                }
+            }
+        }
+    }
+
+    private func handleCompletedTransaction(_ transaction: StoreKit.Transaction, knownProduct: Product?) async throws {
+        let redemption = try await ConvexService.shared.redeemCreditPurchase(
+            transactionId: String(transaction.id),
+            productId: transaction.productID,
+            purchasedAt: transaction.purchaseDate
+        )
+
+        if redemption.applied {
+            let product: Product?
+            if let knownProduct {
+                product = knownProduct
+            } else {
+                product = try? await Product.products(for: [transaction.productID]).first
+            }
+            let amountCentsDecimal = ((product?.price ?? 0) as NSDecimalNumber)
+                .multiplying(by: NSDecimalNumber(value: 100))
+            let amountCents = max(0, amountCentsDecimal.intValue)
+            let currency = product?.priceFormatStyle.currencyCode ?? (Locale.current.currency?.identifier ?? "USD")
+            IngestAnalytics.trackBillCreditsPurchased(
+                transactionId: String(transaction.id),
+                productId: transaction.productID,
+                creditsPurchased: redemption.creditsGranted,
+                amountCents: amountCents,
+                currency: currency,
+                billCreditsBalance: redemption.billCreditsBalance
+            )
+        }
+
+        await transaction.finish()
+        await refreshUsageSummary()
     }
 }
 

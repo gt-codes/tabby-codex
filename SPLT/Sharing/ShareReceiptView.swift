@@ -209,6 +209,7 @@ final class ReceiptShareViewModel: ObservableObject {
             guard code.count == 6 else {
                 throw ReceiptShareError.invalidShareCode
             }
+            IngestAnalytics.trackBillShareCreated(billId: response.id, billCode: code)
             let url = AppClipLink.url(for: code)
             state = .ready(SharePayload(id: response.id, code: code, url: url))
         } catch {

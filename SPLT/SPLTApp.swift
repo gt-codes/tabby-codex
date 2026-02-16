@@ -288,6 +288,10 @@ struct SPLTApp: App {
     @StateObject private var linkRouter = AppLinkRouter()
     @StateObject private var startupStore = SPLTStartupStore()
 
+    init() {
+        _ = BillingStore.shared
+    }
+
     var body: some Scene {
         WindowGroup {
             Group {

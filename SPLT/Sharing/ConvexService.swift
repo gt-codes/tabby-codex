@@ -621,6 +621,10 @@ final class ConvexService {
         AppleAuthStorage.loadSession() != nil
     }
 
+    var analyticsAnonymousID: String {
+        guestDeviceId
+    }
+
     private init() {
         guestDeviceId = GuestDeviceStorage.loadOrCreateDeviceID()
         authProvider = AppleAuthProvider()
@@ -1271,5 +1275,408 @@ final class ConvexService {
         print("[SPLT] Auth is stale, signing out")
         await client.logout()
         UserDefaults.standard.set(false, forKey: Self.authStateKey)
+    }
+}
+
+private enum IngestEventName: String {
+    case billCreated = "bill.created"
+    case billShareCreated = "bill.share_created"
+    case billGuestJoined = "bill.guest_joined"
+    case settlementFinalized = "settlement.finalized"
+    case paymentIntentMarked = "payment.intent_marked"
+    case billCreditsViewed = "bill.credits_viewed"
+    case billCreditsPurchased = "bill.credits_purchased"
+
+    var channel: IngestChannel {
+        switch self {
+        case .billCreated, .billShareCreated:
+            return .funnelHosting
+        case .billGuestJoined:
+            return .funnelCollaboration
+        case .settlementFinalized, .paymentIntentMarked:
+            return .funnelSettlement
+        case .billCreditsViewed, .billCreditsPurchased:
+            return .monetizationCredits
+        }
+    }
+}
+
+private enum IngestChannel: String {
+    case funnelHosting = "funnel_hosting"
+    case funnelCollaboration = "funnel_collaboration"
+    case funnelSettlement = "funnel_settlement"
+    case monetizationCredits = "monetization_credits"
+}
+
+private enum IngestSource: String {
+    case ios
+}
+
+private enum IngestRole: String {
+    case host
+    case guest
+}
+
+private enum IngestValue: Encodable {
+    case string(String)
+    case int(Int)
+    case double(Double)
+    case bool(Bool)
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .string(let value):
+            try container.encode(value)
+        case .int(let value):
+            try container.encode(value)
+        case .double(let value):
+            try container.encode(value)
+        case .bool(let value):
+            try container.encode(value)
+        }
+    }
+}
+
+private struct IngestActorPayload: Encodable {
+    let userId: String?
+    let anonymousId: String?
+    let role: String?
+}
+
+private struct IngestContextPayload: Encodable {
+    let billId: String?
+    let billCode: String?
+    let sessionId: String?
+    let requestId: String?
+    let platform: String
+    let appVersion: String?
+    let buildNumber: String?
+}
+
+private struct IngestEventPayload: Encodable {
+    let eventId: String
+    let eventName: String
+    let channel: String
+    let occurredAt: String
+    let source: String
+    let actor: IngestActorPayload
+    let context: IngestContextPayload
+    let properties: [String: IngestValue]
+}
+
+private struct IngestEnvelopePayload: Encodable {
+    let schemaVersion: String
+    let sentAt: String
+    let source: String
+    let events: [IngestEventPayload]
+}
+
+private actor IngestAnalyticsTransport {
+    static let shared = IngestAnalyticsTransport()
+
+    private static let blockedPropertyFragments = ["email", "phone", "mobile", "contact"]
+    private static let sessionId = UUID().uuidString.lowercased()
+    private static let probeSentKey = "ingestValidationProbeSent"
+    private static let productionIngestURLString = "https://splt.money/ingest"
+
+    private var pendingEvents: [IngestEventPayload] = []
+    private var flushTask: Task<Void, Never>?
+
+    func track(name: IngestEventName, role: IngestRole?, context: IngestContextPayload, properties: [String: IngestValue]) {
+        let sanitized = sanitize(properties: properties)
+        let now = Date()
+        let payload = IngestEventPayload(
+            eventId: UUID().uuidString.lowercased(),
+            eventName: name.rawValue,
+            channel: name.channel.rawValue,
+            occurredAt: Self.iso8601(now),
+            source: IngestSource.ios.rawValue,
+            actor: IngestActorPayload(
+                userId: nil,
+                anonymousId: ConvexService.shared.analyticsAnonymousID,
+                role: role?.rawValue
+            ),
+            context: context,
+            properties: sanitized
+        )
+        pendingEvents.append(payload)
+        scheduleFlushIfNeeded()
+    }
+
+    private func scheduleFlushIfNeeded() {
+        guard flushTask == nil else { return }
+        flushTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            await self?.flush()
+        }
+    }
+
+    private func flush() async {
+        flushTask = nil
+        guard !pendingEvents.isEmpty else { return }
+        let eventsToSend = pendingEvents
+        pendingEvents.removeAll(keepingCapacity: true)
+
+        let envelope = IngestEnvelopePayload(
+            schemaVersion: "1.0",
+            sentAt: Self.iso8601(Date()),
+            source: IngestSource.ios.rawValue,
+            events: eventsToSend
+        )
+        await postEnvelope(envelope, logPrefix: "[SPLT][Analytics]")
+    }
+
+    func sendValidationProbeIfNeeded() async {
+        let defaults = UserDefaults.standard
+        if defaults.bool(forKey: Self.probeSentKey) {
+            return
+        }
+        defaults.set(true, forKey: Self.probeSentKey)
+
+        let probeEvent = IngestEventPayload(
+            eventId: "b098721c-d1d4-46b2-ba78-51704d2b8377",
+            eventName: "bill.credits_viewed",
+            channel: "monetization_credits",
+            occurredAt: Self.iso8601(Date()),
+            source: "ios",
+            actor: IngestActorPayload(userId: "user_123", anonymousId: nil, role: nil),
+            context: IngestContextPayload(
+                billId: nil,
+                billCode: nil,
+                sessionId: nil,
+                requestId: nil,
+                platform: "ios",
+                appVersion: nil,
+                buildNumber: nil
+            ),
+            properties: [:]
+        )
+
+        let envelope = IngestEnvelopePayload(
+            schemaVersion: "1.0",
+            sentAt: Self.iso8601(Date()),
+            source: "ios",
+            events: [probeEvent]
+        )
+        await postEnvelope(envelope, logPrefix: "[SPLT][Analytics][Probe]")
+    }
+
+    private func sanitize(properties: [String: IngestValue]) -> [String: IngestValue] {
+        properties.reduce(into: [String: IngestValue]()) { partialResult, entry in
+            let lowered = entry.key.lowercased()
+            let blocked = Self.blockedPropertyFragments.contains { lowered.contains($0) }
+            if !blocked {
+                partialResult[entry.key] = entry.value
+            }
+        }
+    }
+
+    private static func iso8601(_ date: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.string(from: date)
+    }
+
+    private func postEnvelope(_ envelope: IngestEnvelopePayload, logPrefix: String) async {
+        let endpoints = Self.ingestEndpoints()
+        do {
+            let body = try JSONEncoder().encode(envelope)
+            if let bodyString = String(data: body, encoding: .utf8) {
+                print("\(logPrefix) Request payload: \(bodyString)")
+            }
+            print("\(logPrefix) Endpoint candidates: \(endpoints.map(\.absoluteString).joined(separator: ", "))")
+
+            for endpoint in endpoints {
+                var request = URLRequest(url: endpoint)
+                request.httpMethod = "POST"
+                request.timeoutInterval = 10
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.httpBody = body
+
+                do {
+                    print("\(logPrefix) Attempting endpoint: \(endpoint.absoluteString)")
+                    let (responseData, response) = try await URLSession.shared.data(for: request)
+                    if let responseBody = String(data: responseData, encoding: .utf8), !responseBody.isEmpty {
+                        print("\(logPrefix) Response body: \(responseBody)")
+                    }
+                    if let httpResponse = response as? HTTPURLResponse {
+                        print("\(logPrefix) Status: \(httpResponse.statusCode) (\(endpoint.absoluteString))")
+                        if (200...299).contains(httpResponse.statusCode) {
+                            return
+                        }
+                    }
+                } catch {
+                    print("\(logPrefix) Endpoint failed (\(endpoint.absoluteString)): \(error.localizedDescription)")
+                }
+            }
+
+            print("\(logPrefix) All ingest endpoints failed.")
+        } catch {
+            print("\(logPrefix) Failed to encode envelope: \(error.localizedDescription)")
+        }
+    }
+
+    private static func ingestEndpoints() -> [URL] {
+        if let configured = configuredIngestURL() {
+            return [configured]
+        }
+
+        guard let production = URL(string: productionIngestURLString) else {
+            return []
+        }
+        return [production]
+    }
+
+    private static func configuredIngestURL() -> URL? {
+        let raw = ProcessInfo.processInfo.environment["SPLT_INGEST_URL"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let raw, !raw.isEmpty else { return nil }
+        return URL(string: raw)
+    }
+
+    static func defaultContext(billId: String?, billCode: String?) -> IngestContextPayload {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String
+        let build = info?["CFBundleVersion"] as? String
+        return IngestContextPayload(
+            billId: billId,
+            billCode: billCode,
+            sessionId: sessionId,
+            requestId: nil,
+            platform: "ios",
+            appVersion: version,
+            buildNumber: build
+        )
+    }
+}
+
+enum IngestAnalytics {
+    static func trackBillCreated(receipt: Receipt) {
+        let context = IngestAnalyticsTransport.defaultContext(
+            billId: receipt.remoteID ?? receipt.id.uuidString,
+            billCode: receipt.shareCode
+        )
+        let properties: [String: IngestValue] = [
+            "itemCount": .int(receipt.items.count),
+            "receiptTotal": .double(receipt.total)
+        ]
+        Task {
+            await IngestAnalyticsTransport.shared.track(
+                name: .billCreated,
+                role: .host,
+                context: context,
+                properties: properties
+            )
+        }
+    }
+
+    static func trackBillShareCreated(billId: String, billCode: String?) {
+        let context = IngestAnalyticsTransport.defaultContext(billId: billId, billCode: billCode)
+        Task {
+            await IngestAnalyticsTransport.shared.track(
+                name: .billShareCreated,
+                role: .host,
+                context: context,
+                properties: [:]
+            )
+        }
+    }
+
+    static func trackBillGuestJoined(receipt: Receipt) {
+        let context = IngestAnalyticsTransport.defaultContext(
+            billId: receipt.remoteID ?? receipt.id.uuidString,
+            billCode: receipt.shareCode
+        )
+        Task {
+            await IngestAnalyticsTransport.shared.track(
+                name: .billGuestJoined,
+                role: .guest,
+                context: context,
+                properties: [:]
+            )
+        }
+    }
+
+    static func trackSettlementFinalized(liveState: ReceiptLiveState) {
+        let context = IngestAnalyticsTransport.defaultContext(
+            billId: liveState.remoteId,
+            billCode: liveState.code
+        )
+        let properties: [String: IngestValue] = [
+            "participantCount": .int(liveState.participants.count)
+        ]
+        Task {
+            await IngestAnalyticsTransport.shared.track(
+                name: .settlementFinalized,
+                role: .host,
+                context: context,
+                properties: properties
+            )
+        }
+    }
+
+    static func trackPaymentIntentMarked(liveState: ReceiptLiveState, method: String) {
+        let context = IngestAnalyticsTransport.defaultContext(
+            billId: liveState.remoteId,
+            billCode: liveState.code
+        )
+        let properties: [String: IngestValue] = [
+            "paymentMethod": .string(method)
+        ]
+        Task {
+            await IngestAnalyticsTransport.shared.track(
+                name: .paymentIntentMarked,
+                role: .guest,
+                context: context,
+                properties: properties
+            )
+        }
+    }
+
+    static func trackBillCreditsViewed(freeRemaining: Int?, billCreditsBalance: Int?) {
+        let context = IngestAnalyticsTransport.defaultContext(billId: nil, billCode: nil)
+        var properties: [String: IngestValue] = [:]
+        if let freeRemaining {
+            properties["freeRemaining"] = .int(freeRemaining)
+        }
+        if let billCreditsBalance {
+            properties["billCreditsBalance"] = .int(billCreditsBalance)
+        }
+        Task {
+            await IngestAnalyticsTransport.shared.sendValidationProbeIfNeeded()
+            await IngestAnalyticsTransport.shared.track(
+                name: .billCreditsViewed,
+                role: .host,
+                context: context,
+                properties: properties
+            )
+        }
+    }
+
+    static func trackBillCreditsPurchased(
+        transactionId: String,
+        productId: String,
+        creditsPurchased: Int,
+        amountCents: Int,
+        currency: String,
+        billCreditsBalance: Int
+    ) {
+        let context = IngestAnalyticsTransport.defaultContext(billId: nil, billCode: nil)
+        let properties: [String: IngestValue] = [
+            "transactionId": .string(transactionId),
+            "productId": .string(productId),
+            "creditsPurchased": .int(creditsPurchased),
+            "amountCents": .int(amountCents),
+            "currency": .string(currency.uppercased()),
+            "billCreditsBalance": .int(billCreditsBalance)
+        ]
+        Task {
+            await IngestAnalyticsTransport.shared.track(
+                name: .billCreditsPurchased,
+                role: .host,
+                context: context,
+                properties: properties
+            )
+        }
     }
 }

@@ -2968,6 +2968,9 @@ final class ReceiptActivityViewModel: ObservableObject {
 
         do {
             try await ConvexService.shared.finalizeSettlement(receiptCode: code)
+            if case .ready(let liveState) = state {
+                IngestAnalytics.trackSettlementFinalized(liveState: liveState)
+            }
         } catch {
             actionErrorMessage = error.localizedDescription
         }
@@ -2977,6 +2980,9 @@ final class ReceiptActivityViewModel: ObservableObject {
         guard let code = activeCode else { return }
         do {
             try await ConvexService.shared.markPaymentIntent(receiptCode: code, method: method)
+            if case .ready(let liveState) = state {
+                IngestAnalytics.trackPaymentIntentMarked(liveState: liveState, method: method)
+            }
         } catch {
             actionErrorMessage = error.localizedDescription
         }
@@ -3015,6 +3021,7 @@ final class ReceiptActivityViewModel: ObservableObject {
         guard code.count == 6 else {
             throw ReceiptShareError.invalidShareCode
         }
+        IngestAnalytics.trackBillShareCreated(billId: response.id, billCode: code)
 
         shareReceipt = Receipt(
             id: seedReceipt.id,

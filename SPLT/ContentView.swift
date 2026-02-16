@@ -779,6 +779,7 @@ private struct ReceiptsView: View {
         withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
             receipts = mergeReceipts(local: receipts, remote: [newReceipt])
         }
+        IngestAnalytics.trackBillCreated(receipt: newReceipt)
         draftItems = []
         draftReceiptImages = []
         draftReceiptTotal = nil
@@ -924,6 +925,9 @@ private struct ReceiptsView: View {
             pendingJoinReceipt = destinationReceipt
             joinDisplayName = ""
             showJoinNameSheet = true
+            if !destinationReceipt.canManageActions {
+                IngestAnalytics.trackBillGuestJoined(receipt: destinationReceipt)
+            }
         } catch {
             joinErrorMessage = error.localizedDescription
         }
@@ -1739,6 +1743,10 @@ private struct ProfileView: View {
         if isSignedIn {
             Section("Bill Credits") {
                 Button {
+                    IngestAnalytics.trackBillCreditsViewed(
+                        freeRemaining: billUsageSummary?.freeRemaining,
+                        billCreditsBalance: billUsageSummary?.billCreditsBalance
+                    )
                     showBillCreditsSheet = true
                 } label: {
                     VStack(alignment: .leading, spacing: 14) {
