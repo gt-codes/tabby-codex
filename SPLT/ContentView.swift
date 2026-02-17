@@ -254,6 +254,7 @@ private struct ReceiptsView: View {
     }
 
     @AppStorage("isSignedIn") private var isSignedIn = ConvexService.shared.hasCachedSession
+    @AppStorage("profileDisplayName") private var profileDisplayName = ""
     @EnvironmentObject private var linkRouter: AppLinkRouter
     @EnvironmentObject private var notificationManager: NotificationManager
     @EnvironmentObject private var startupStore: SPLTStartupStore
@@ -922,15 +923,57 @@ private struct ReceiptsView: View {
                 ($0.shareCode != nil && $0.shareCode == joinedReceipt.shareCode)
             }) ?? joinedReceipt
 
-            pendingJoinReceipt = destinationReceipt
-            joinDisplayName = ""
-            showJoinNameSheet = true
+            if isSignedIn,
+               let shareCode = destinationReceipt.shareCode,
+               let resolvedName = await resolveSignedInJoinDisplayName(),
+               !resolvedName.isEmpty {
+                try? await ConvexService.shared.updateParticipantDisplayName(
+                    receiptCode: shareCode,
+                    displayName: resolvedName
+                )
+                pendingJoinReceipt = nil
+                showJoinNameSheet = false
+                openReceipt(destinationReceipt)
+            } else {
+                pendingJoinReceipt = destinationReceipt
+                joinDisplayName = ""
+                showJoinNameSheet = true
+            }
             if !destinationReceipt.canManageActions {
                 IngestAnalytics.trackBillGuestJoined(receipt: destinationReceipt)
             }
         } catch {
             joinErrorMessage = error.localizedDescription
         }
+    }
+
+    @MainActor
+    private func resolveSignedInJoinDisplayName() async -> String? {
+        let trimmedLocalName = profileDisplayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedLocalName.isEmpty {
+            return trimmedLocalName
+        }
+
+        do {
+            guard let profile = try await ConvexService.shared.fetchMyProfile() else {
+                return nil
+            }
+
+            let trimmedRemoteName = profile.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !trimmedRemoteName.isEmpty {
+                profileDisplayName = trimmedRemoteName
+                return trimmedRemoteName
+            }
+
+            let email = profile.email?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !email.isEmpty {
+                return email
+            }
+        } catch {
+            return nil
+        }
+
+        return nil
     }
 
     private func upsertReceipt(_ updatedReceipt: Receipt) {

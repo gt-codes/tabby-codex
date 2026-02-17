@@ -613,6 +613,12 @@ final class ConvexService {
     static let shared = ConvexService()
     private static let authStateKey = "isSignedIn"
 
+    private enum AuthVerificationResult {
+        case valid
+        case invalid
+        case inconclusive
+    }
+
     private let authProvider: AppleAuthProvider
     private let client: ConvexClientWithAuth<AppleAuthSession>
     private let guestDeviceId: String
@@ -640,10 +646,10 @@ final class ConvexService {
                     return
                 }
 
-                let authValid = await self.verifyAuthOrRelogin()
-                if !authValid {
+                let authVerification = await self.verifyAuthOrRelogin()
+                if authVerification == .invalid {
                     await self.handleStaleAuth()
-                } else {
+                } else if authVerification == .valid {
                     // Auth is established — re-register the push token so the
                     // backend row gets our tokenIdentifier (it may have been
                     // registered before auth was ready).
@@ -1237,21 +1243,18 @@ final class ConvexService {
     }
 
     /// Tries `upsertMe` to verify the Convex auth token is valid.
-    /// If it fails (expired JWT), checks Apple credential state and signs out if revoked.
-    /// Returns `true` if auth is valid after this call.
-    private func verifyAuthOrRelogin() async -> Bool {
+    /// If it fails, checks Apple credential state and only invalidates the
+    /// local session when the credential is revoked or missing.
+    private func verifyAuthOrRelogin() async -> AuthVerificationResult {
         do {
             let _: MutationIdResponse = try await client.mutation("users:upsertMe")
-            return true
+            return .valid
         } catch {
             print("[SPLT] Cached auth token rejected: \(error)")
         }
 
-        // The JWT was rejected — check if the Apple credential is still valid.
-        // If the user's Apple ID credential is revoked, sign out.
-        // Otherwise the token just expired — the user needs to re-login explicitly.
         guard let cachedSession = AppleAuthStorage.loadSession() else {
-            return false
+            return .invalid
         }
 
         let credentialState = await withCheckedContinuation { continuation in
@@ -1262,13 +1265,11 @@ final class ConvexService {
 
         if credentialState == .revoked || credentialState == .notFound {
             print("[SPLT] Apple credential revoked or not found, signing out")
-            return false
+            return .invalid
         }
 
-        // Credential is still authorized with Apple but the JWT expired.
-        // Clear the stale session so the user can sign in again cleanly.
-        print("[SPLT] Apple credential valid but JWT expired, clearing stale session")
-        return false
+        print("[SPLT] Apple credential is still valid; preserving signed-in state")
+        return .inconclusive
     }
 
     private func handleStaleAuth() async {
